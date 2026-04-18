@@ -12,6 +12,8 @@ const isDev =
 const DEFAULT_QWEN_BASE_URL =
   'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_QWEN_MODEL = 'qwen3.6-plus';
+const DEFAULT_AI_TIMEOUT_MS = 60000;
+const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
 // Keep in sync with src/constants/subjects.ts
 const ALLOWED_SUBJECTS = new Set(['物理', '数学', '化学', '生物']);
 
@@ -443,6 +445,28 @@ async function retainSoftDeletedQuestionImages(questions) {
   // Future hard-delete/archive cleanup should use these tombstones as the entry point.
 }
 
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => {
+    controller.abort(new Error('TIMEOUT'));
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      throw new Error('TIMEOUT');
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 function createResourceId(prefix) {
   if (typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -753,42 +777,46 @@ async function generateQuestionAnalysis(_event, payload) {
     imageLength: image.length,
   });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      enable_thinking: false,
-      temperature: 0.2,
-      response_format: {
-        type: 'json_object',
+  const response = await fetchWithTimeout(
+    `${baseUrl}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-      messages: [
-        {
-          role: 'system',
-          content: '你是一个严格只返回 JSON 的错题分析助手。',
+      body: JSON.stringify({
+        model,
+        enable_thinking: false,
+        temperature: 0.2,
+        response_format: {
+          type: 'json_object',
         },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: image,
+        messages: [
+          {
+            role: 'system',
+            content: '你是一个严格只返回 JSON 的错题分析助手。',
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: image,
+                },
               },
-            },
-            {
-              type: 'text',
-              text: buildAnalysisPrompt(),
-            },
-          ],
-        },
-      ],
-    }),
-  });
+              {
+                type: 'text',
+                text: buildAnalysisPrompt(),
+              },
+            ],
+          },
+        ],
+      }),
+    },
+    DEFAULT_AI_TIMEOUT_MS
+  );
 
   const responseText = await response.text();
   let responseJson = null;
@@ -871,44 +899,48 @@ async function generateQuestionExplanation(_event, payload) {
     subject,
   });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      enable_thinking: false,
-      temperature: 0.4,
-      messages: [
-        {
-          role: 'system',
-          content: [
-            '你是一名中国高中理科老师，擅长给学生讲清楚解题过程。',
-            '回答必须是自然、完整的简体中文。',
-            '严禁输出英文句子、英文段落或中英夹杂解释。',
-            '只有公式、变量、单位、函数名中允许保留必要字母。',
-          ].join('\n'),
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: image,
+  const response = await fetchWithTimeout(
+    `${baseUrl}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        enable_thinking: false,
+        temperature: 0.4,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              '你是一名中国高中理科老师，擅长给学生讲清楚解题过程。',
+              '回答必须是自然、完整的简体中文。',
+              '严禁输出英文句子、英文段落或中英夹杂解释。',
+              '只有公式、变量、单位、函数名中允许保留必要字母。',
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: image,
+                },
               },
-            },
-            {
-              type: 'text',
-              text: buildDetailedExplanationPrompt(payload),
-            },
-          ],
-        },
-      ],
-    }),
-  });
+              {
+                type: 'text',
+                text: buildDetailedExplanationPrompt(payload),
+              },
+            ],
+          },
+        ],
+      }),
+    },
+    DETAILED_EXPLANATION_TIMEOUT_MS
+  );
 
   const responseText = await response.text();
   let responseJson = null;
@@ -979,39 +1011,43 @@ async function generateQuestionHint(_event, payload) {
     subject,
   });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      enable_thinking: false,
-      temperature: 0.4,
-      messages: [
-        {
-          role: 'system',
-          content: '你是一名中国高中理科老师，擅长用简短提示点拨学生继续思考。',
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: image,
+  const response = await fetchWithTimeout(
+    `${baseUrl}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        enable_thinking: false,
+        temperature: 0.4,
+        messages: [
+          {
+            role: 'system',
+            content: '你是一名中国高中理科老师，擅长用简短提示点拨学生继续思考。',
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: image,
+                },
               },
-            },
-            {
-              type: 'text',
-              text: [buildHintPrompt(), '', `题目标题：${title || '未命名题目'}`, `预估学科：${subject || '未识别学科'}`].join('\n'),
-            },
-          ],
-        },
-      ],
-    }),
-  });
+              {
+                type: 'text',
+                text: [buildHintPrompt(), '', `题目标题：${title || '未命名题目'}`, `预估学科：${subject || '未识别学科'}`].join('\n'),
+              },
+            ],
+          },
+        ],
+      }),
+    },
+    DEFAULT_AI_TIMEOUT_MS
+  );
 
   const responseText = await response.text();
   let responseJson = null;
@@ -1144,19 +1180,23 @@ async function generateFollowUp(_event, payload) {
     content: userQuestion,
   });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  const response = await fetchWithTimeout(
+    `${baseUrl}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        enable_thinking: true,
+        temperature: 0.4,
+        messages,
+      }),
     },
-    body: JSON.stringify({
-      model,
-      enable_thinking: true,
-      temperature: 0.4,
-      messages,
-    }),
-  });
+    DEFAULT_AI_TIMEOUT_MS
+  );
 
   const responseText = await response.text();
   let responseJson = null;

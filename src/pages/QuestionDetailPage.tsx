@@ -135,7 +135,11 @@ export default function QuestionDetailPage({
   };
 
   const handleDelete = () => {
-    if (window.confirm('确定删除这道错题吗？删除后无法恢复。')) {
+    if (
+      window.confirm(
+        '确定将这道错题标记为已删除吗？它会从当前列表中隐藏，但不会立即从本地数据中彻底移除。'
+      )
+    ) {
       onDeleteQuestion(question.id);
       navigate('/questions');
     }
@@ -309,7 +313,7 @@ export default function QuestionDetailPage({
           await onAddNoteImage(question.id, reader.result);
         } catch (error) {
           console.error('Failed to persist note image.', error);
-          alert('绗旇鍥剧墖淇濆瓨澶辫触锛岃閲嶈瘯');
+          alert('笔记图片保存失败，请重试');
         }
       }
     };
@@ -429,16 +433,16 @@ export default function QuestionDetailPage({
                 </span>
                 <span className="btn-icon__text">完成复习</span>
               </button>
-              <button
-                className="btn-icon btn-delete"
-                onClick={handleDelete}
-                title="删除错题"
-              >
-                <span className="btn-icon__symbol" aria-hidden="true">
-                  ×
-                </span>
-                <span className="btn-icon__text">删除</span>
-              </button>
+                <button
+                  className="btn-icon btn-delete"
+                  onClick={handleDelete}
+                  title="标记为已删除"
+                >
+                  <span className="btn-icon__symbol" aria-hidden="true">
+                    ×
+                  </span>
+                  <span className="btn-icon__text">标记删除</span>
+                </button>
             </div>
           </div>
 

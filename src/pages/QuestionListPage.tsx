@@ -37,7 +37,11 @@ export default function QuestionListPage({
 
   const handleDeleteClick = (e: MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm('确定要删除这道错题吗？')) {
+    if (
+      window.confirm(
+        '确定将这道错题标记为已删除吗？它会从当前列表中隐藏，但不会立即从本地数据中彻底移除。'
+      )
+    ) {
       onDeleteQuestion(id);
     }
   };
@@ -158,7 +162,7 @@ export default function QuestionListPage({
                   <button
                     className="btn-delete"
                     onClick={(e) => handleDeleteClick(e, question.id)}
-                    title="删除错题"
+                    title="标记为已删除"
                   >
                     ×
                   </button>

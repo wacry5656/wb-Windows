@@ -15,6 +15,7 @@
     "electron-dev": "concurrently \"npm run react-start\" \"wait-on http://localhost:3000 && npm run electron-start\"",
     "electron-build": "npm run react-build && electron-builder",
     "electron-portable": "npm run react-build && electron-builder --win portable",
+    "cleanup-images": "node scripts/cleanup-orphan-images.js",
     "build": "npm run react-build",
     "dev": "npm run electron-dev"
   },

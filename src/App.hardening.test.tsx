@@ -82,7 +82,7 @@ test('deleted questions cannot be opened through the detail route', async () => 
 
   render(<App />);
 
-  expect(await screen.findByText(/题目未找到|棰樼洰鏈壘鍒/)).toBeInTheDocument();
+  expect(await screen.findByText('题目未找到')).toBeInTheDocument();
   expect(screen.queryByText('已删除题目')).not.toBeInTheDocument();
 });
 
@@ -118,7 +118,7 @@ test('new image writes prefer file-based refs when Electron image persistence is
   const titleInput = container.querySelector('input[type="text"]') as HTMLInputElement;
   const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
   const submitButton = screen.getByRole('button', {
-    name: /保存错题|淇濆瓨閿欓/,
+    name: '保存错题',
   });
   const file = new File(['image-content'], 'test-question.png', {
     type: 'image/png',
