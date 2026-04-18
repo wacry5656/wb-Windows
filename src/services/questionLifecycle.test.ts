@@ -4,7 +4,7 @@ import {
   normalizeQuestions,
 } from './questionModel';
 import { markQuestionReviewed } from './reviewService';
-import { createQuestion, softDeleteQuestionById, updateQuestionById } from './questionService';
+import { createQuestion, deleteQuestionById, updateQuestionById } from './questionService';
 
 describe('question lifecycle services', () => {
   test('createQuestion seeds sync and review metadata', () => {
@@ -84,7 +84,7 @@ describe('question lifecycle services', () => {
     ]);
   });
 
-  test('softDeleteQuestionById marks tombstone metadata instead of removing the record', () => {
+  test('deleteQuestionById physically removes the record', () => {
     const question = createQuestion(
       '测试题目',
       'data:image/png;base64,abc',
@@ -92,15 +92,9 @@ describe('question lifecycle services', () => {
       { now: '2026-04-17T00:00:00.000Z' }
     );
 
-    const [deletedQuestion] = softDeleteQuestionById([question], question.id, {
-      now: '2026-04-18T00:00:00.000Z',
-    });
+    const nextQuestions = deleteQuestionById([question], question.id);
 
-    expect(deletedQuestion.deleted).toBe(true);
-    expect(deletedQuestion.deletedAt).toBe('2026-04-18T00:00:00.000Z');
-    expect(deletedQuestion.updatedAt).toBe('2026-04-18T00:00:00.000Z');
-    expect(deletedQuestion.syncStatus).toBe('modified');
-    expect(deletedQuestion.imageRefs).toEqual(question.imageRefs);
+    expect(nextQuestions).toEqual([]);
   });
 
   test('markQuestionReviewed updates schedule fields together and marks sync as modified', () => {

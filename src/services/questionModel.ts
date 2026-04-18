@@ -82,12 +82,12 @@ export function normalizeQuestions(value: unknown): Question[] {
     .filter((question): question is Question => Boolean(question));
 }
 
-export function isActiveQuestion(question: Question): boolean {
-  return !question.deleted;
+export function isActiveQuestion(_question: Question): boolean {
+  return true;
 }
 
 export function getActiveQuestions(questions: Question[]): Question[] {
-  return questions.filter(isActiveQuestion);
+  return questions;
 }
 
 export function resolveNextSyncStatus(_currentStatus?: QuestionSyncStatus): QuestionSyncStatus {
@@ -143,7 +143,7 @@ function normalizeQuestion(value: unknown): Question | null {
   );
   const image = resolveLegacyImage(imageRefs, question.image);
 
-  if (!image) {
+  if (!image || deleted) {
     return null;
   }
 

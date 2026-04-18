@@ -39,7 +39,7 @@ export default function QuestionListPage({
     e.stopPropagation();
     if (
       window.confirm(
-        '确定将这道错题标记为已删除吗？它会从当前列表中隐藏，但不会立即从本地数据中彻底移除。'
+        '确定删除这道错题吗？删除后将直接从本地数据中移除，且不可恢复。'
       )
     ) {
       onDeleteQuestion(id);
@@ -162,7 +162,7 @@ export default function QuestionListPage({
                   <button
                     className="btn-delete"
                     onClick={(e) => handleDeleteClick(e, question.id)}
-                    title="标记为已删除"
+                    title="删除错题"
                   >
                     ×
                   </button>

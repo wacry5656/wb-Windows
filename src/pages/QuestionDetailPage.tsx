@@ -137,7 +137,7 @@ export default function QuestionDetailPage({
   const handleDelete = () => {
     if (
       window.confirm(
-        '确定将这道错题标记为已删除吗？它会从当前列表中隐藏，但不会立即从本地数据中彻底移除。'
+        '确定删除这道错题吗？删除后将直接从本地数据中移除，且不可恢复。'
       )
     ) {
       onDeleteQuestion(question.id);
@@ -436,12 +436,12 @@ export default function QuestionDetailPage({
                 <button
                   className="btn-icon btn-delete"
                   onClick={handleDelete}
-                  title="标记为已删除"
+                  title="删除错题"
                 >
                   <span className="btn-icon__symbol" aria-hidden="true">
                     ×
                   </span>
-                  <span className="btn-icon__text">标记删除</span>
+                  <span className="btn-icon__text">删除</span>
                 </button>
             </div>
           </div>

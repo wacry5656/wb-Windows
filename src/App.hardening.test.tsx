@@ -21,7 +21,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('soft-deleted questions stay out of list and review routes', async () => {
+test('physically deleted questions no longer exist in list and review routes', async () => {
   const payload = JSON.stringify([
     {
       id: 'visible-question',
@@ -32,17 +32,6 @@ test('soft-deleted questions stay out of list and review routes', async () => {
       notes: '',
       reviewCount: 1,
     },
-    {
-      id: 'deleted-question',
-      title: '已删除题目',
-      image: 'data:image/png;base64,deleted',
-      category: '数学',
-      createdAt: '2026-04-11T11:00:00.000Z',
-      notes: '',
-      reviewCount: 0,
-      deleted: true,
-      deletedAt: '2026-04-12T00:00:00.000Z',
-    },
   ]);
 
   window.localStorage.setItem(storageKey, payload);
@@ -50,7 +39,6 @@ test('soft-deleted questions stay out of list and review routes', async () => {
 
   const firstRender = render(<App />);
   expect((await screen.findAllByText('可见题目')).length).toBeGreaterThan(0);
-  expect(screen.queryByText('已删除题目')).not.toBeInTheDocument();
   firstRender.unmount();
 
   window.localStorage.setItem(storageKey, payload);
@@ -58,23 +46,20 @@ test('soft-deleted questions stay out of list and review routes', async () => {
 
   render(<App />);
   expect((await screen.findAllByText('可见题目')).length).toBeGreaterThan(0);
-  expect(screen.queryByText('已删除题目')).not.toBeInTheDocument();
 });
 
-test('deleted questions cannot be opened through the detail route', async () => {
+test('removed questions cannot be opened through the detail route', async () => {
   window.localStorage.setItem(
     storageKey,
     JSON.stringify([
       {
-        id: 'deleted-question',
-        title: '已删除题目',
-        image: 'data:image/png;base64,deleted',
+        id: 'visible-question',
+        title: '可见题目',
+        image: 'data:image/png;base64,abc',
         category: '数学',
-        createdAt: '2026-04-11T11:00:00.000Z',
+        createdAt: '2026-04-11T10:00:00.000Z',
         notes: '',
         reviewCount: 0,
-        deleted: true,
-        deletedAt: '2026-04-12T00:00:00.000Z',
       },
     ])
   );
@@ -83,7 +68,96 @@ test('deleted questions cannot be opened through the detail route', async () => 
   render(<App />);
 
   expect(await screen.findByText('题目未找到')).toBeInTheDocument();
-  expect(screen.queryByText('已删除题目')).not.toBeInTheDocument();
+});
+
+test('deleting a question saves the remaining questions only', async () => {
+  jest.useFakeTimers();
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+
+  const saveQuestions = jest.fn().mockResolvedValue({
+    success: true,
+    storageFilePath: 'data/questions.json',
+    cleanedImagePaths: ['data/images/orphan-note.png'],
+  });
+
+  window.electronAPI = {
+    loadQuestions: jest.fn().mockResolvedValue([
+      {
+        id: 'question-1',
+        title: '待删除题目',
+        image: 'file:///data/images/question-1.png',
+        imageRefs: [
+          {
+            id: 'img-question-1',
+            storage: 'file',
+            kind: 'question',
+            uri: 'file:///data/images/question-1.png',
+            createdAt: '2026-04-12T00:00:00.000Z',
+            mimeType: 'image/png',
+          },
+        ],
+        noteImages: ['file:///data/images/note-1.png'],
+        noteImageRefs: [
+          {
+            id: 'img-note-1',
+            storage: 'file',
+            kind: 'note',
+            uri: 'file:///data/images/note-1.png',
+            createdAt: '2026-04-12T00:00:00.000Z',
+            mimeType: 'image/png',
+          },
+        ],
+        category: '数学',
+        createdAt: '2026-04-12T00:00:00.000Z',
+        notes: '',
+        reviewCount: 0,
+      },
+      {
+        id: 'question-2',
+        title: '保留题目',
+        image: 'file:///data/images/question-2.png',
+        imageRefs: [
+          {
+            id: 'img-question-2',
+            storage: 'file',
+            kind: 'question',
+            uri: 'file:///data/images/question-2.png',
+            createdAt: '2026-04-12T00:00:00.000Z',
+            mimeType: 'image/png',
+          },
+        ],
+        noteImageRefs: [],
+        category: '数学',
+        createdAt: '2026-04-12T00:00:00.000Z',
+        notes: '',
+        reviewCount: 0,
+      },
+    ]),
+    saveQuestions,
+    getApiConfigStatus: jest.fn(),
+    generateQuestionAnalysis: jest.fn(),
+    generateQuestionExplanation: jest.fn(),
+    generateQuestionHint: jest.fn(),
+    generateFollowUp: jest.fn(),
+  };
+
+  window.location.hash = '#/questions/question-1';
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+
+  act(() => {
+    jest.advanceTimersByTime(1000);
+  });
+
+  await waitFor(() => {
+    expect(saveQuestions).toHaveBeenCalled();
+  });
+
+  const savedQuestions = saveQuestions.mock.calls[saveQuestions.mock.calls.length - 1]?.[0];
+  expect(savedQuestions).toHaveLength(1);
+  expect(savedQuestions[0].title).toBe('保留题目');
+  expect(screen.queryByText('待删除题目')).not.toBeInTheDocument();
 });
 
 test('new image writes prefer file-based refs when Electron image persistence is available', async () => {

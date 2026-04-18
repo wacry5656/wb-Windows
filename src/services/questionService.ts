@@ -4,7 +4,6 @@ import {
   createFileImageRef,
   createInlineImageRef,
   getImageRefDisplaySrc,
-  isActiveQuestion,
   resolveNextSyncStatus,
 } from './questionModel';
 
@@ -112,50 +111,29 @@ export function replaceQuestionFollowUpChatsById(
   return updateQuestionById(questions, id, { followUpChats }, options);
 }
 
-export function softDeleteQuestionById(
+export function deleteQuestionById(
   questions: Question[],
-  id: string,
-  options: QuestionMutationOptions = {}
+  id: string
 ): Question[] {
-  const timestamp = options.now || new Date().toISOString();
-
-  return questions.map((question) => {
-    if (question.id !== id || question.deleted) {
-      return question;
-    }
-
-    // Soft delete keeps image refs intact so file cleanup can stay conservative.
-    // Future hard-delete/archive flows should reclaim files explicitly.
-    return {
-      ...question,
-      deleted: true,
-      deletedAt: timestamp,
-      updatedAt: timestamp,
-      syncStatus: nextSyncStatusForMutation(question.syncStatus),
-    };
-  });
+  return questions.filter((question) => question.id !== id);
 }
 
 export function findQuestionById(
   questions: Question[],
-  id: string,
-  options: { includeDeleted?: boolean } = {}
+  id: string
 ): Question | undefined {
-  return questions.find(
-    (question) => question.id === id && (options.includeDeleted || isActiveQuestion(question))
-  );
+  return questions.find((question) => question.id === id);
 }
 
 export function getVisibleStats(questions: Question[]) {
-  const visibleQuestions = questions.filter(isActiveQuestion);
-  const analyzedCount = visibleQuestions.filter((question) => question.analysis).length;
-  const reviewedCount = visibleQuestions.reduce(
+  const analyzedCount = questions.filter((question) => question.analysis).length;
+  const reviewedCount = questions.reduce(
     (total, question) => total + question.reviewCount,
     0
   );
 
   return {
-    totalCount: visibleQuestions.length,
+    totalCount: questions.length,
     analyzedCount,
     reviewedCount,
   };
@@ -166,14 +144,9 @@ export function applyQuestionUpdates(
   updates: Partial<Question>,
   options: QuestionMutationOptions = {}
 ): Question {
-  if (question.deleted && updates.deleted !== false) {
-    return question;
-  }
-
   const timestamp = options.now || new Date().toISOString();
   const nextImageRefs = resolveImageRefs(question, updates, timestamp);
   const nextNoteImageRefs = resolveNoteImageRefs(question, updates, timestamp);
-  const nextDeleted = updates.deleted ?? question.deleted;
 
   return {
     ...question,
@@ -181,10 +154,6 @@ export function applyQuestionUpdates(
     image: resolveNextImage(nextImageRefs, updates.image, question.image),
     imageRefs: nextImageRefs,
     updatedAt: timestamp,
-    deleted: nextDeleted,
-    deletedAt: nextDeleted
-      ? updates.deletedAt || question.deletedAt || timestamp
-      : undefined,
     syncStatus: nextSyncStatusForMutation(question.syncStatus, updates.syncStatus),
     noteImages:
       nextNoteImageRefs.length > 0

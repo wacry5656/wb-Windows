@@ -215,7 +215,6 @@ async function saveQuestionsToFile(_event, questions) {
       previousQuestions,
       nextValue
     );
-    await retainSoftDeletedQuestionImages(nextValue);
 
     return {
       success: true,
@@ -425,24 +424,6 @@ async function cleanupRemovedImageFiles(previousQuestions, nextQuestions) {
   }
 
   return cleanedImagePaths;
-}
-
-async function retainSoftDeletedQuestionImages(questions) {
-  const softDeletedQuestionCount = Array.isArray(questions)
-    ? questions.filter(
-        (question) =>
-          question &&
-          typeof question === 'object' &&
-          question.deleted === true
-      ).length
-    : 0;
-
-  if (softDeletedQuestionCount === 0) {
-    return;
-  }
-
-  // Current strategy: soft-deleted questions keep their file refs.
-  // Future hard-delete/archive cleanup should use these tombstones as the entry point.
 }
 
 async function fetchWithTimeout(url, options, timeoutMs) {

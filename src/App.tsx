@@ -12,15 +12,14 @@ import {
   generateHintUpdates,
 } from './services/questionAiService';
 import { persistQuestionImage } from './services/questionImageService';
-import { getActiveQuestions } from './services/questionModel';
 import {
   createQuestion,
+  deleteQuestionById,
   findQuestionById,
   getVisibleStats,
   removeQuestionNoteImageById,
   replaceQuestionFollowUpChatsById,
   replaceQuestionNoteImagesById,
-  softDeleteQuestionById,
   updateQuestionNotesById,
   updateQuestionTitleById,
   updateQuestionById,
@@ -78,7 +77,7 @@ export default function App() {
   }, []);
 
   const deleteQuestion = useCallback((id: string) => {
-    setQuestions((currentQuestions) => softDeleteQuestionById(currentQuestions, id));
+    setQuestions((currentQuestions) => deleteQuestionById(currentQuestions, id));
   }, []);
 
   const reviewQuestion = useCallback((id: string) => {
@@ -181,7 +180,6 @@ export default function App() {
     };
   }, [debouncedSave, hasLoadedQuestions, questions]);
 
-  const activeQuestions = useMemo(() => getActiveQuestions(questions), [questions]);
   const stats = useMemo(() => getVisibleStats(questions), [questions]);
 
   return (
@@ -262,7 +260,7 @@ export default function App() {
               path="/questions"
               element={
                 <QuestionListPage
-                  questions={activeQuestions}
+                  questions={questions}
                   onDeleteQuestion={deleteQuestion}
                 />
               }
@@ -271,7 +269,7 @@ export default function App() {
               path="/questions/:id"
               element={
                 <QuestionDetailPage
-                  questions={activeQuestions}
+                  questions={questions}
                   onUpdateQuestionTitle={updateQuestionTitle}
                   onUpdateQuestionNotes={updateQuestionNotes}
                   onClearFollowUps={clearQuestionFollowUps}
@@ -290,7 +288,7 @@ export default function App() {
               path="/review"
               element={
                 <ReviewPage
-                  questions={activeQuestions}
+                  questions={questions}
                   onMarkQuestionReviewed={reviewQuestion}
                 />
               }
