@@ -9,6 +9,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Question } from '../types/question';
 import './QuestionDetailPageV2.css';
 
+const DEFAULT_AI_TIMEOUT_MS = 60000;
+const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
+
 interface QuestionDetailPageProps {
   questions: Question[];
   onUpdateQuestionTitle: (id: string, title: string) => void;
@@ -182,7 +185,7 @@ export default function QuestionDetailPage({
       await Promise.race([
         onGenerateAnalysis(question),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), 60000)
+          setTimeout(() => reject(new Error('TIMEOUT')), DEFAULT_AI_TIMEOUT_MS)
         ),
       ]);
     } catch (error) {
@@ -205,7 +208,7 @@ export default function QuestionDetailPage({
       await Promise.race([
         onGenerateHint(question),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), 60000)
+          setTimeout(() => reject(new Error('TIMEOUT')), DEFAULT_AI_TIMEOUT_MS)
         ),
       ]);
     } catch (error) {
@@ -228,7 +231,10 @@ export default function QuestionDetailPage({
       await Promise.race([
         onGenerateDetailedExplanation(question),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), 60000)
+          setTimeout(
+            () => reject(new Error('TIMEOUT')),
+            DETAILED_EXPLANATION_TIMEOUT_MS
+          )
         ),
       ]);
     } catch (error) {
@@ -253,7 +259,7 @@ export default function QuestionDetailPage({
       await Promise.race([
         onSendFollowUp(question, nextMessage),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), 60000)
+          setTimeout(() => reject(new Error('TIMEOUT')), DEFAULT_AI_TIMEOUT_MS)
         ),
       ]);
       setFollowUpInput('');

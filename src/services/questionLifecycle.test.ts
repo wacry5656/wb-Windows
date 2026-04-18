@@ -100,6 +100,7 @@ describe('question lifecycle services', () => {
     expect(deletedQuestion.deletedAt).toBe('2026-04-18T00:00:00.000Z');
     expect(deletedQuestion.updatedAt).toBe('2026-04-18T00:00:00.000Z');
     expect(deletedQuestion.syncStatus).toBe('modified');
+    expect(deletedQuestion.imageRefs).toEqual(question.imageRefs);
   });
 
   test('markQuestionReviewed updates schedule fields together and marks sync as modified', () => {

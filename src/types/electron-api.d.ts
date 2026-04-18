@@ -57,6 +57,7 @@ export interface ElectronApi {
   ) => Promise<{
     success: boolean;
     storageFilePath: string;
+    cleanedImagePaths?: string[];
   }>;
   persistImage?: (payload: {
     dataUrl: string;

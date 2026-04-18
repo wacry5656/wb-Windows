@@ -196,6 +196,7 @@ async function saveQuestionsToFile(_event, questions) {
   const result = await enqueueWrite(async () => {
     await ensureLegacyQuestionsMigrated();
     const storageFilePath = getQuestionsStorageFilePath();
+    const previousQuestions = await readQuestionsArrayFromFile(storageFilePath);
     const nextValue = Array.isArray(questions) ? questions : [];
 
     await fs.promises.mkdir(path.dirname(storageFilePath), { recursive: true });
@@ -208,10 +209,16 @@ async function saveQuestionsToFile(_event, questions) {
       'utf8'
     );
     await fs.promises.rename(tmpFilePath, storageFilePath);
+    const cleanedImagePaths = await cleanupRemovedImageFiles(
+      previousQuestions,
+      nextValue
+    );
+    await retainSoftDeletedQuestionImages(nextValue);
 
     return {
       success: true,
       storageFilePath,
+      cleanedImagePaths,
     };
   });
 
@@ -321,7 +328,8 @@ function getMimeTypeFromPath(filePath) {
   }
 }
 
-function resolveImageFilePath(uri) {
+function resolveImageFilePath(uri, options = {}) {
+  const requireExists = options.requireExists !== false;
   const imagesDirectory = path.resolve(getImagesStorageDirectory());
   const resolvedPath = path.resolve(
     uri.startsWith('file://') ? fileURLToPath(uri) : uri
@@ -331,12 +339,108 @@ function resolveImageFilePath(uri) {
   if (
     relativePath.startsWith('..') ||
     path.isAbsolute(relativePath) ||
-    !fs.existsSync(resolvedPath)
+    (requireExists && !fs.existsSync(resolvedPath))
   ) {
     throw new Error('INVALID_IMAGE_URI');
   }
 
   return resolvedPath;
+}
+
+function collectReferencedFileImageUris(questions) {
+  if (!Array.isArray(questions)) {
+    return new Set();
+  }
+
+  const uris = new Set();
+
+  for (const question of questions) {
+    if (!question || typeof question !== 'object') {
+      continue;
+    }
+
+    if (isFileImageUri(question.image)) {
+      uris.add(question.image);
+    }
+
+    if (Array.isArray(question.noteImages)) {
+      for (const noteImage of question.noteImages) {
+        if (isFileImageUri(noteImage)) {
+          uris.add(noteImage);
+        }
+      }
+    }
+
+    collectFileUrisFromRefs(question.imageRefs, uris);
+    collectFileUrisFromRefs(question.noteImageRefs, uris);
+  }
+
+  return uris;
+}
+
+function collectFileUrisFromRefs(refs, uris) {
+  if (!Array.isArray(refs)) {
+    return;
+  }
+
+  for (const ref of refs) {
+    if (
+      ref &&
+      typeof ref === 'object' &&
+      (ref.storage === 'file' || typeof ref.uri === 'string') &&
+      isFileImageUri(ref.uri)
+    ) {
+      uris.add(ref.uri);
+    }
+  }
+}
+
+function isFileImageUri(value) {
+  return typeof value === 'string' && /^file:\/\//i.test(value);
+}
+
+async function cleanupRemovedImageFiles(previousQuestions, nextQuestions) {
+  const previousUris = collectReferencedFileImageUris(previousQuestions);
+  const nextUris = collectReferencedFileImageUris(nextQuestions);
+  const removedUris = [...previousUris].filter((uri) => !nextUris.has(uri));
+  const cleanedImagePaths = [];
+
+  for (const uri of removedUris) {
+    try {
+      const filePath = resolveImageFilePath(uri, { requireExists: false });
+      await fs.promises.unlink(filePath);
+      cleanedImagePaths.push(filePath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        continue;
+      }
+
+      appendMainProcessLog('storage:cleanup-image-skip', {
+        uri,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return cleanedImagePaths;
+}
+
+async function retainSoftDeletedQuestionImages(questions) {
+  const softDeletedQuestionCount = Array.isArray(questions)
+    ? questions.filter(
+        (question) =>
+          question &&
+          typeof question === 'object' &&
+          question.deleted === true
+      ).length
+    : 0;
+
+  if (softDeletedQuestionCount === 0) {
+    return;
+  }
+
+  // Current strategy: soft-deleted questions keep their file refs.
+  // Future hard-delete/archive cleanup should use these tombstones as the entry point.
 }
 
 function createResourceId(prefix) {
@@ -433,6 +537,9 @@ function buildDetailedExplanationPrompt(payload) {
     '3. 不要使用加粗、标题语法、代码块',
     '4. 不要输出“你好”“我们来分析”等寒暄内容',
     '5. 直接从讲解内容开始',
+    '6. 全文只能使用简体中文表达，不允许输出英文单词、英文句子或中英夹杂解释',
+    '7. 涉及公式、符号、变量时可以保留必要的数学字母或物理符号，例如 x、y、sin、cos、R、m、v，但解释这些公式时仍必须使用中文',
+    '8. 如果你脑中先想到英文表述，必须先完整翻译成自然中文后再输出，不能把翻译过程写出来',
     '',
     `题目标题：${title}`,
     `预估学科：${subject}`,
@@ -462,6 +569,7 @@ function buildDetailedExplanationPrompt(payload) {
     '- 不要只给结论，重点讲过程',
     '- 如果题目条件不完整或图片不清晰，要明确指出不确定之处',
     '- 不要编造不存在的条件',
+    '- 除公式和变量外，禁止出现英文',
   ].join('\n');
 }
 
@@ -478,6 +586,7 @@ function buildHintPrompt() {
     '6. 避免空话，例如“认真审题”“注意计算”',
     '7. 控制在 2 到 5 句话内',
     '8. 优先输出简洁中文，不要 markdown，不要标题，不要编号',
+    '9. 除公式、变量、必要符号外，禁止输出英文单词和英文句子',
     '',
     '输出目标：',
     '帮助学生继续独立思考，而不是直接看答案。',
@@ -770,12 +879,17 @@ async function generateQuestionExplanation(_event, payload) {
     },
     body: JSON.stringify({
       model,
-      enable_thinking: true,
+      enable_thinking: false,
       temperature: 0.4,
       messages: [
         {
           role: 'system',
-          content: '你是一名中国高中理科老师，擅长给学生讲清楚解题过程。',
+          content: [
+            '你是一名中国高中理科老师，擅长给学生讲清楚解题过程。',
+            '回答必须是自然、完整的简体中文。',
+            '严禁输出英文句子、英文段落或中英夹杂解释。',
+            '只有公式、变量、单位、函数名中允许保留必要字母。',
+          ].join('\n'),
         },
         {
           role: 'user',
@@ -975,6 +1089,8 @@ async function generateFollowUp(_event, payload) {
         '3. 回答要具体，结合题目和之前的详解内容',
         '4. 语言清晰，适合高中生理解',
         '5. 不要重复已有的详解内容，针对学生的问题给出有针对性的回答',
+        '6. 全文必须使用简体中文，不允许输出英文句子、英文段落或中英夹杂解释',
+        '7. 只有公式、变量、单位、函数名中允许保留必要字母，除此之外一律用中文',
       ].join('\n'),
     },
   ];

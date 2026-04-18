@@ -124,6 +124,8 @@ export function softDeleteQuestionById(
       return question;
     }
 
+    // Soft delete keeps image refs intact so file cleanup can stay conservative.
+    // Future hard-delete/archive flows should reclaim files explicitly.
     return {
       ...question,
       deleted: true,
