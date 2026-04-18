@@ -1,0 +1,139 @@
+[2026-04-14T14:14:37.769Z] app:ready
+[2026-04-14T14:14:37.772Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-14T14:14:37.808Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-14T14:14:38.298Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:15:02.844Z] createWindow:ready-to-show
+[2026-04-14T14:15:04.286Z] createWindow:closed
+[2026-04-14T14:15:04.286Z] app:window-all-closed
+[2026-04-14T14:20:56.869Z] app:ready
+[2026-04-14T14:20:56.870Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-14T14:20:56.913Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-14T14:20:57.335Z] createWindow:ready-to-show
+[2026-04-14T14:20:57.336Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:33:04.688Z] app:ready
+[2026-04-14T14:33:04.689Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-14T14:33:04.738Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-14T14:33:05.218Z] createWindow:ready-to-show
+[2026-04-14T14:33:05.219Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:46:15.276Z] app:ready
+[2026-04-14T14:46:15.277Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-14T14:46:15.322Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-14T14:46:15.864Z] createWindow:ready-to-show
+[2026-04-14T14:46:15.865Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:46:51.334Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:47:43.900Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:47:56.433Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:48:00.101Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:48:26.191Z] createWindow:closed
+[2026-04-14T14:48:26.192Z] app:window-all-closed
+[2026-04-14T14:48:58.805Z] app:ready
+[2026-04-14T14:48:58.805Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-14T14:48:58.848Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-14T14:48:59.258Z] createWindow:ready-to-show
+[2026-04-14T14:48:59.263Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-14T14:49:18.528Z] analysis:generate:start {
+  "model": "qwen3.6-plus",
+  "imagePrefix": "data:image/jpeg;base64,/9j/4TZGR",
+  "imageLength": 5294299
+}
+[2026-04-14T14:49:25.379Z] analysis:generate:success {
+  "subject": "物理",
+  "knowledgePointsCount": 3,
+  "commonMistakesCount": 3,
+  "cautionsCount": 3
+}
+[2026-04-17T15:04:25.209Z] app:ready
+[2026-04-17T15:04:25.212Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-17T15:04:25.245Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-17T15:04:25.757Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-17T15:04:27.917Z] createWindow:ready-to-show
+[2026-04-17T15:06:03.918Z] createWindow:closed
+[2026-04-17T15:06:03.919Z] app:window-all-closed
+[2026-04-17T15:28:46.674Z] app:ready
+[2026-04-17T15:28:46.675Z] createWindow:start {
+  "isDev": true,
+  "execPath": "D:\\杂项\\软件\\wrong-question-assistant\\node_modules\\electron\\dist\\electron.exe",
+  "cwd": "D:\\杂项\\软件\\wrong-question-assistant",
+  "dirname": "D:\\杂项\\软件\\wrong-question-assistant\\public"
+}
+[2026-04-17T15:28:46.701Z] createWindow:load-dev-url {
+  "url": "http://localhost:3000"
+}
+[2026-04-17T15:28:47.155Z] createWindow:ready-to-show
+[2026-04-17T15:28:47.158Z] createWindow:did-finish-load {
+  "url": "http://localhost:3000/"
+}
+[2026-04-17T15:29:11.320Z] hint:generate:start {
+  "model": "qwen3.6-plus",
+  "imagePrefix": "data:image/jpeg;base64,/9j/4TZGR",
+  "imageLength": 5294299,
+  "title": "光学",
+  "subject": "物理"
+}
+[2026-04-17T15:29:14.640Z] hint:generate:success {
+  "length": 166
+}
+[2026-04-17T15:29:23.399Z] createWindow:closed
+[2026-04-17T15:29:23.399Z] app:window-all-closed

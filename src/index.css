@@ -1,0 +1,67 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-base: #fcf9f2;
+  --bg-soft: #f4efe3;
+  --panel-bg: rgba(255, 255, 255, 0.92);
+  --text-strong: #1f2933;
+  --text-muted: #5f6c76;
+  --accent-color: #0b4d3d;
+  --accent-soft: #d97706;
+  --border-color: rgba(31, 41, 51, 0.1);
+  --panel-shadow: 0 26px 60px rgba(49, 64, 76, 0.12);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  font-family:
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    'Hiragino Sans GB',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(circle at top left, rgba(11, 77, 61, 0.14), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(216, 119, 6, 0.14), transparent 26%),
+    linear-gradient(180deg, var(--bg-base), #fffdf8 44%, var(--bg-soft));
+  color: var(--text-strong);
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}

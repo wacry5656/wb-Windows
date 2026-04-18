@@ -1,0 +1,84 @@
+{
+  "name": "wrong-question-assistant",
+  "version": "1.0.0",
+  "description": "一个帮助学生管理和复习错题的桌面应用",
+  "main": "public/electron.js",
+  "homepage": "./",
+  "author": "",
+  "license": "ISC",
+  "scripts": {
+    "react-start": "react-scripts start",
+    "react-build": "react-scripts build",
+    "react-test": "react-scripts test",
+    "react-eject": "react-scripts eject",
+    "electron-start": "cross-env NODE_ENV=development electron .",
+    "electron-dev": "concurrently \"npm run react-start\" \"wait-on http://localhost:3000 && npm run electron-start\"",
+    "electron-build": "npm run react-build && electron-builder",
+    "electron-portable": "npm run react-build && electron-builder --win portable",
+    "build": "npm run react-build",
+    "dev": "npm run electron-dev"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.10.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "concurrently": "^7.6.0",
+    "cross-env": "^7.0.3",
+    "electron": "^41.2.0",
+    "electron-builder": "^24.13.3",
+    "react-scripts": "5.0.1",
+    "typescript": "^4.9.5",
+    "wait-on": "^7.0.1"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "build": {
+    "appId": "com.wrongquestion.assistant",
+    "productName": "Wrong Question Assistant",
+    "files": [
+      "build/**/*",
+      "public/electron.js",
+      "public/preload.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "extraResources": [
+      ".env"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-portable.${ext}",
+      "signAndEditExecutable": false
+    },
+    "extraMetadata": {
+      "main": "public/electron.js"
+    }
+  }
+}
