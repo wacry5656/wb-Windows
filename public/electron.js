@@ -388,6 +388,48 @@ async function materializeImageRefForSync(ref) {
   }
 }
 
+async function materializeRemoteImageRefForLocalStorage(ref) {
+  if (!ref || typeof ref !== 'object') {
+    return ref;
+  }
+
+  const dataUrl = typeof ref.dataUrl === 'string' ? ref.dataUrl.trim() : '';
+  if (ref.storage !== 'inline' || !dataUrl) {
+    return ref;
+  }
+
+  const parsed = parseImageDataUrl(dataUrl);
+  if (!parsed) {
+    return ref;
+  }
+
+  return enqueueWrite(async () => {
+    const imagesDirectory = getImagesStorageDirectory();
+    await fs.promises.mkdir(imagesDirectory, { recursive: true });
+
+    const imageId =
+      typeof ref.id === 'string' && ref.id.trim()
+        ? ref.id.trim()
+        : createResourceId(`img-${ref.kind === 'note' ? 'note' : 'question'}`);
+    const extension = getImageExtension(ref.mimeType || parsed.mimeType);
+    const filePath = path.join(imagesDirectory, `${imageId}.${extension}`);
+
+    await fs.promises.writeFile(filePath, parsed.buffer);
+
+    return {
+      id: imageId,
+      storage: 'file',
+      kind: ref.kind === 'note' ? 'note' : 'question',
+      uri: pathToFileURL(filePath).href,
+      createdAt:
+        typeof ref.createdAt === 'string' && ref.createdAt.trim()
+          ? ref.createdAt
+          : new Date().toISOString(),
+      mimeType: ref.mimeType || parsed.mimeType,
+    };
+  });
+}
+
 async function materializeQuestionForSync(question) {
   if (!question || typeof question !== 'object') {
     return question;
@@ -411,6 +453,29 @@ async function materializeQuestionForSync(question) {
     imageRefs,
     noteImages: noteImageRefs
       .map((ref) => (typeof ref?.dataUrl === 'string' ? ref.dataUrl : null))
+      .filter(Boolean),
+    noteImageRefs,
+  };
+}
+
+async function materializeRemoteQuestionForLocalStorage(question) {
+  if (!question || typeof question !== 'object') {
+    return question;
+  }
+
+  const imageRefs = Array.isArray(question.imageRefs)
+    ? await Promise.all(question.imageRefs.map(materializeRemoteImageRefForLocalStorage))
+    : [];
+  const noteImageRefs = Array.isArray(question.noteImageRefs)
+    ? await Promise.all(question.noteImageRefs.map(materializeRemoteImageRefForLocalStorage))
+    : [];
+
+  return {
+    ...question,
+    image: imageRefs[0]?.uri || imageRefs[0]?.dataUrl || question.image,
+    imageRefs,
+    noteImages: noteImageRefs
+      .map((ref) => (typeof ref?.uri === 'string' ? ref.uri : typeof ref?.dataUrl === 'string' ? ref.dataUrl : null))
       .filter(Boolean),
     noteImageRefs,
   };
@@ -489,7 +554,9 @@ async function syncQuestionsWithServer(_event, questions) {
     throw new Error('SYNC_INVALID_RECORDS');
   }
 
-  const remoteRecords = responseJson.records;
+  const remoteRecords = await Promise.all(
+    responseJson.records.map(materializeRemoteQuestionForLocalStorage)
+  );
 
   appendMainProcessLog('sync:success', {
     received: remoteRecords.length,

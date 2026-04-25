@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 const express = require('express');
 const dotenv = require('dotenv');
 
@@ -277,6 +277,16 @@ function normalizeQuestionRecord(input) {
   const followUpChats = normalizeFollowUpChats(input.followUpChats, updatedAt);
   const detailedExplanation = optionalNullableString(input.detailedExplanation);
   const hint = optionalNullableString(input.hint);
+  const notes = optionalString(input.notes);
+  const notesUpdatedAt =
+    toIso(input.notesUpdatedAt, '') || (notes ? updatedAt : undefined);
+  const noteImagesUpdatedAt =
+    toIso(input.noteImagesUpdatedAt, '') || (noteImageRefs.length > 0 ? updatedAt : undefined);
+  const reviewCount = normalizeInteger(input.reviewCount, 0, 0);
+  const lastReviewedAt = optionalNullableString(toIso(input.lastReviewedAt, ''));
+  const reviewUpdatedAt =
+    toIso(input.reviewUpdatedAt, '') ||
+    ((reviewCount > 0 || lastReviewedAt) ? lastReviewedAt || updatedAt : undefined);
 
   return {
     id,
@@ -297,14 +307,17 @@ function normalizeQuestionRecord(input) {
     deletedAt:
       input.deleted === true ? toIso(input.deletedAt, updatedAt) : undefined,
     syncStatus: normalizeSyncStatus(input.syncStatus),
-    notes: optionalString(input.notes),
+    notes,
+    notesUpdatedAt,
     errorCause: optionalString(input.errorCause),
     tags: normalizeStringArray(input.tags),
     masteryLevel: normalizeInteger(input.masteryLevel, 0, 0, 5),
-    reviewCount: normalizeInteger(input.reviewCount, 0, 0),
-    lastReviewedAt: optionalNullableString(toIso(input.lastReviewedAt, '')),
+    reviewCount,
+    lastReviewedAt,
     nextReviewAt: optionalNullableString(toIso(input.nextReviewAt, '')),
     reviewStatus: normalizeReviewStatus(input.reviewStatus),
+    noteImagesUpdatedAt,
+    reviewUpdatedAt,
     analysis,
     analysisContentUpdatedAt: analysis
       ? toIso(input.analysisContentUpdatedAt, analysis.updatedAt || contentUpdatedAt)
@@ -349,13 +362,16 @@ function mergeQuestion(existing, incoming) {
   const incomingContentTs = toTimestamp(incoming.contentUpdatedAt || incoming.updatedAt);
   const existingUpdatedTs = toTimestamp(existing.updatedAt);
   const incomingUpdatedTs = toTimestamp(incoming.updatedAt);
+  const existingNotesTs = toTimestamp(existing.notesUpdatedAt || existing.updatedAt);
+  const incomingNotesTs = toTimestamp(incoming.notesUpdatedAt || incoming.updatedAt);
+  const existingNoteImagesTs = toTimestamp(existing.noteImagesUpdatedAt || existing.updatedAt);
+  const incomingNoteImagesTs = toTimestamp(incoming.noteImagesUpdatedAt || incoming.updatedAt);
+  const existingReviewTs = toTimestamp(existing.reviewUpdatedAt || existing.lastReviewedAt || existing.updatedAt);
+  const incomingReviewTs = toTimestamp(incoming.reviewUpdatedAt || incoming.lastReviewedAt || incoming.updatedAt);
   const useIncomingCore = incomingContentTs >= existingContentTs;
-  const useIncomingMeta = incomingUpdatedTs >= existingUpdatedTs;
-
-  const primaryQuestionRefs = useIncomingCore ? incoming.imageRefs : existing.imageRefs;
-  const secondaryQuestionRefs = useIncomingCore ? existing.imageRefs : incoming.imageRefs;
-  const primaryNoteRefs = useIncomingMeta ? incoming.noteImageRefs : existing.noteImageRefs;
-  const secondaryNoteRefs = useIncomingMeta ? existing.noteImageRefs : incoming.noteImageRefs;
+  const useIncomingNotes = incomingNotesTs >= existingNotesTs;
+  const useIncomingNoteImages = incomingNoteImagesTs >= existingNoteImagesTs;
+  const useIncomingReview = incomingReviewTs >= existingReviewTs;
 
   const merged = {
     id: existing.id,
@@ -363,7 +379,7 @@ function mergeQuestion(existing, incoming) {
     questionText: useIncomingCore ? incoming.questionText : existing.questionText,
     userAnswer: useIncomingCore ? incoming.userAnswer : existing.userAnswer,
     correctAnswer: useIncomingCore ? incoming.correctAnswer : existing.correctAnswer,
-    imageRefs: mergeImageRefs(primaryQuestionRefs, secondaryQuestionRefs),
+    imageRefs: useIncomingCore ? incoming.imageRefs : existing.imageRefs,
     category: useIncomingCore ? incoming.category : existing.category,
     grade: useIncomingCore ? incoming.grade : existing.grade,
     questionType: useIncomingCore ? incoming.questionType : existing.questionType,
@@ -374,14 +390,19 @@ function mergeQuestion(existing, incoming) {
     deleted: false,
     deletedAt: undefined,
     syncStatus: 'synced',
-    notes: useIncomingMeta ? incoming.notes : existing.notes,
+    notes: useIncomingNotes ? incoming.notes : existing.notes,
+    notesUpdatedAt: laterIso(existing.notesUpdatedAt || '', incoming.notesUpdatedAt || '') || undefined,
     errorCause: useIncomingCore ? incoming.errorCause : existing.errorCause,
     tags: useIncomingCore ? incoming.tags : existing.tags,
-    masteryLevel: useIncomingMeta ? incoming.masteryLevel : existing.masteryLevel,
+    masteryLevel: useIncomingReview ? incoming.masteryLevel : existing.masteryLevel,
     reviewCount: Math.max(existing.reviewCount, incoming.reviewCount),
     lastReviewedAt: laterIso(existing.lastReviewedAt || '', incoming.lastReviewedAt || '') || undefined,
-    nextReviewAt: useIncomingMeta ? incoming.nextReviewAt : existing.nextReviewAt,
-    reviewStatus: useIncomingMeta ? incoming.reviewStatus : existing.reviewStatus,
+    nextReviewAt: useIncomingReview ? incoming.nextReviewAt : existing.nextReviewAt,
+    reviewStatus: useIncomingReview ? incoming.reviewStatus : existing.reviewStatus,
+    noteImagesUpdatedAt:
+      laterIso(existing.noteImagesUpdatedAt || '', incoming.noteImagesUpdatedAt || '') || undefined,
+    reviewUpdatedAt:
+      laterIso(existing.reviewUpdatedAt || '', incoming.reviewUpdatedAt || '') || undefined,
     analysis: existing.analysis,
     analysisContentUpdatedAt: existing.analysisContentUpdatedAt,
     detailedExplanation: existing.detailedExplanation,
@@ -395,7 +416,7 @@ function mergeQuestion(existing, incoming) {
       existing.followUpContentUpdatedAt || '',
       incoming.followUpContentUpdatedAt || ''
     ) || undefined,
-    noteImageRefs: mergeImageRefs(primaryNoteRefs, secondaryNoteRefs),
+    noteImageRefs: useIncomingNoteImages ? incoming.noteImageRefs : existing.noteImageRefs,
   };
 
   const existingAnalysisBasis = existing.analysisContentUpdatedAt || existing.analysis?.updatedAt || '';
@@ -436,12 +457,15 @@ function mergeQuestion(existing, incoming) {
   return setSynced({
     ...merged,
     image: merged.imageRefs[0]?.dataUrl || merged.imageRefs[0]?.uri || '',
-    noteImages: mergeStringArrays(existing.noteImages || [], incoming.noteImages || []),
+    noteImages: merged.noteImageRefs
+      .map((ref) => ref.dataUrl || ref.uri || '')
+      .filter(Boolean),
   });
 }
 
 function createDatabase() {
-  const db = new DatabaseSync(resolvedDatabasePath);
+  const db = new Database(resolvedDatabasePath);
+  db.pragma('journal_mode = WAL');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS questions (

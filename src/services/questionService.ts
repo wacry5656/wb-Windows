@@ -66,6 +66,7 @@ export function createQuestion(
     deletedAt: undefined,
     syncStatus: 'pending',
     notes: metadata.notes || '',
+    notesUpdatedAt: metadata.notes?.trim() ? timestamp : undefined,
     errorCause: metadata.errorCause || '',
     tags: normalizeTags(metadata.tags),
     masteryLevel: 0,
@@ -73,6 +74,8 @@ export function createQuestion(
     lastReviewedAt: undefined,
     nextReviewAt: undefined,
     reviewStatus: 'new',
+    noteImagesUpdatedAt: undefined,
+    reviewUpdatedAt: undefined,
     noteImages: undefined,
     noteImageRefs: [],
   };
@@ -198,6 +201,9 @@ export function applyQuestionUpdates(
   const nextNoteImageRefs = resolveNoteImageRefs(question, updates, timestamp);
   const nextImage = resolveNextImage(nextImageRefs, updates.image, question.image);
   const coreContentChanged = hasCoreContentChanges(question, updates, nextImageRefs, nextImage);
+  const notesChanged = hasNotesChanges(question, updates);
+  const noteImagesChanged = !areImageRefsEqual(nextNoteImageRefs, question.noteImageRefs);
+  const reviewChanged = hasReviewChanges(question, updates);
 
   return {
     ...question,
@@ -207,6 +213,24 @@ export function applyQuestionUpdates(
     updatedAt: timestamp,
     contentUpdatedAt: coreContentChanged ? timestamp : question.contentUpdatedAt,
     syncStatus: nextSyncStatusForMutation(question.syncStatus, updates.syncStatus),
+    notesUpdatedAt:
+      typeof updates.notesUpdatedAt === 'string'
+        ? updates.notesUpdatedAt
+        : notesChanged
+          ? timestamp
+          : question.notesUpdatedAt,
+    noteImagesUpdatedAt:
+      typeof updates.noteImagesUpdatedAt === 'string'
+        ? updates.noteImagesUpdatedAt
+        : noteImagesChanged
+          ? timestamp
+          : question.noteImagesUpdatedAt,
+    reviewUpdatedAt:
+      typeof updates.reviewUpdatedAt === 'string'
+        ? updates.reviewUpdatedAt
+        : reviewChanged
+          ? timestamp
+          : question.reviewUpdatedAt,
     noteImages:
       nextNoteImageRefs.length > 0
         ? nextNoteImageRefs.map((imageRef) => getImageRefDisplaySrc(imageRef))
@@ -286,6 +310,33 @@ function nextSyncStatusForMutation(
   }
 
   return resolveNextSyncStatus(currentStatus);
+}
+
+function hasNotesChanges(question: Question, updates: Partial<Question>): boolean {
+  const nextNotes = typeof updates.notes === 'string' ? updates.notes : question.notes;
+  return nextNotes !== question.notes;
+}
+
+function hasReviewChanges(question: Question, updates: Partial<Question>): boolean {
+  const nextMasteryLevel =
+    typeof updates.masteryLevel === 'number' ? updates.masteryLevel : question.masteryLevel;
+  const nextReviewCount =
+    typeof updates.reviewCount === 'number' ? updates.reviewCount : question.reviewCount;
+  const nextLastReviewedAt =
+    typeof updates.lastReviewedAt === 'string'
+      ? updates.lastReviewedAt
+      : question.lastReviewedAt;
+  const nextNextReviewAt =
+    typeof updates.nextReviewAt === 'string' ? updates.nextReviewAt : question.nextReviewAt;
+  const nextReviewStatus = updates.reviewStatus ?? question.reviewStatus;
+
+  return (
+    nextMasteryLevel !== question.masteryLevel ||
+    nextReviewCount !== question.reviewCount ||
+    nextLastReviewedAt !== question.lastReviewedAt ||
+    nextNextReviewAt !== question.nextReviewAt ||
+    nextReviewStatus !== question.reviewStatus
+  );
 }
 
 function hasCoreContentChanges(

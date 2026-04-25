@@ -23,6 +23,9 @@ describe('question lifecycle services', () => {
         syncStatus: 'pending',
         reviewStatus: 'new',
         reviewCount: 0,
+        notesUpdatedAt: undefined,
+        noteImagesUpdatedAt: undefined,
+        reviewUpdatedAt: undefined,
       })
     );
     expect(question.imageRefs).toHaveLength(1);
@@ -124,6 +127,7 @@ describe('question lifecycle services', () => {
         reviewCount: 1,
         lastReviewedAt: '2026-04-18T08:00:00.000Z',
         reviewStatus: 'reviewing',
+        reviewUpdatedAt: '2026-04-18T08:00:00.000Z',
         updatedAt: '2026-04-18T08:00:00.000Z',
         syncStatus: 'modified',
       })
@@ -157,6 +161,7 @@ describe('question lifecycle services', () => {
     );
 
     expect(updatedQuestion.updatedAt).toBe('2026-04-18T09:00:00.000Z');
+    expect(updatedQuestion.notesUpdatedAt).toBe('2026-04-18T09:00:00.000Z');
     expect(updatedQuestion.syncStatus).toBe('modified');
     expect(updatedQuestion.followUpChats?.[0].id).toBe('chat-user-1');
   });
@@ -178,6 +183,7 @@ describe('question lifecycle services', () => {
       'data:image/png;base64,note-1',
       'data:image/png;base64,note-2',
     ]);
+    expect(updatedQuestion.noteImagesUpdatedAt).toBeDefined();
     expect(updatedQuestion.syncStatus).toBe('modified');
   });
 

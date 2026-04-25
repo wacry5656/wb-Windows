@@ -35,6 +35,7 @@ export function markQuestionReviewed(
               : nextReviewAt,
       reviewStatus: 'reviewing',
       masteryLevel: nextMasteryLevel,
+      reviewUpdatedAt: timestamp,
     },
     { now: timestamp }
   );

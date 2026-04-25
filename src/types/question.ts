@@ -66,6 +66,7 @@ export interface Question {
   deletedAt?: string;
   syncStatus: QuestionSyncStatus;
   notes: string;
+  notesUpdatedAt?: string;
   errorCause: string;
   tags: string[];
   masteryLevel: number;
@@ -73,6 +74,8 @@ export interface Question {
   lastReviewedAt?: string;
   nextReviewAt?: string;
   reviewStatus: QuestionReviewStatus;
+  noteImagesUpdatedAt?: string;
+  reviewUpdatedAt?: string;
   analysis?: QuestionAnalysis;
   analysisContentUpdatedAt?: string;
   detailedExplanation?: string;

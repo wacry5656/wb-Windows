@@ -177,20 +177,49 @@ export default function App() {
 
     setSyncStatusText('正在同步...');
     try {
-      const result = await window.electronAPI.syncQuestions(latestQuestionsRef.current);
+      const localQuestions = latestQuestionsRef.current;
+      const uploadedCount = localQuestions.length;
+      const result = await window.electronAPI.syncQuestions(localQuestions);
       if (!result || !Array.isArray(result.records)) {
         throw new Error('SYNC_INVALID_RECORDS');
+      }
+
+      if (uploadedCount > 0 && localQuestions.length > 0 && result.records.length === 0) {
+        throw new Error('SYNC_EMPTY_REMOTE');
       }
 
       const remoteQuestions = normalizeQuestions(result.records).map((question) => ({
         ...question,
         syncStatus: 'synced' as const,
       }));
+
+      if (remoteQuestions.length < result.records.length) {
+        console.warn('Sync normalization dropped remote records.', {
+          received: result.records.length,
+          normalized: remoteQuestions.length,
+        });
+      }
+
+      if (localQuestions.length > 0 && remoteQuestions.length === 0) {
+        throw new Error('SYNC_EMPTY_REMOTE');
+      }
+
+      if (localQuestions.length > 0 && remoteQuestions.length < localQuestions.length) {
+        console.warn('Sync returned fewer questions than local cache.', {
+          local: localQuestions.length,
+          remote: remoteQuestions.length,
+        });
+      }
+
       setQuestions(remoteQuestions);
       persistQuestionsImmediately(remoteQuestions);
       setSyncStatusText(`同步完成：${remoteQuestions.length} 题`);
     } catch (error) {
       console.error('Failed to sync questions.', error);
+      if (error instanceof Error && error.message === 'SYNC_EMPTY_REMOTE') {
+        setSyncStatusText('同步异常：服务端返回空数据');
+        return;
+      }
       setSyncStatusText('同步失败，请检查 VPS 配置');
     }
   }, [persistQuestionsImmediately]);

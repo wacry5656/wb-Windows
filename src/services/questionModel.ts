@@ -163,6 +163,15 @@ function normalizeQuestion(value: unknown): Question | null {
   );
   const normalizedHintUpdatedAt = normalizeDateString(question.hintUpdatedAt);
   const normalizedFollowUpChats = normalizeFollowUpChats(question.followUpChats);
+  const normalizedNotesUpdatedAt =
+    normalizeDateString(question.notesUpdatedAt) ||
+    (typeof question.notes === 'string' && question.notes.trim() ? updatedAt : undefined);
+  const normalizedNoteImagesUpdatedAt =
+    normalizeDateString(question.noteImagesUpdatedAt) ||
+    (noteImageRefs.length > 0 ? updatedAt : undefined);
+  const normalizedReviewUpdatedAt =
+    normalizeDateString(question.reviewUpdatedAt) ||
+    (reviewCount > 0 || normalizedLastReviewedAt ? normalizedLastReviewedAt || updatedAt : undefined);
   const normalizedAnalysisContentUpdatedAt =
     normalizeDateString(question.analysisContentUpdatedAt) ||
     normalizedAnalysis?.updatedAt ||
@@ -211,6 +220,7 @@ function normalizeQuestion(value: unknown): Question | null {
     deletedAt: deleted ? normalizeDateString(question.deletedAt) || updatedAt : undefined,
     syncStatus: normalizeSyncStatus(question.syncStatus),
     notes: typeof question.notes === 'string' ? question.notes : '',
+    notesUpdatedAt: normalizedNotesUpdatedAt,
     errorCause: typeof question.errorCause === 'string' ? question.errorCause : '',
     tags: normalizeStringArray(question.tags),
     masteryLevel:
@@ -221,6 +231,8 @@ function normalizeQuestion(value: unknown): Question | null {
     lastReviewedAt: normalizedLastReviewedAt || undefined,
     nextReviewAt,
     reviewStatus: normalizedReviewStatus,
+    noteImagesUpdatedAt: normalizedNoteImagesUpdatedAt,
+    reviewUpdatedAt: normalizedReviewUpdatedAt,
     analysis: normalizedAnalysis,
     analysisContentUpdatedAt: normalizedAnalysisContentUpdatedAt,
     detailedExplanation:
