@@ -487,6 +487,13 @@ export default function QuestionDetailPage({
               </div>
             )}
 
+            {question.analysis &&
+              question.analysisContentUpdatedAt !== question.contentUpdatedAt && (
+                <div className="analysis-error" role="status">
+                  题目内容已更新，当前分析可能已过期，建议重新分析。
+                </div>
+              )}
+
             {question.analysis ? (
               <div className="analysis-grid">
                 <div className="analysis-card">
@@ -567,6 +574,12 @@ export default function QuestionDetailPage({
               </div>
             )}
 
+            {question.hint && question.hintContentUpdatedAt !== question.contentUpdatedAt && (
+              <div className="analysis-error" role="status">
+                题目内容已更新，当前指引可能已过期，建议重新生成。
+              </div>
+            )}
+
             {question.hint ? (
               <div className="detailed-explanation-card hint-card">
                 <div className="detailed-explanation-card__meta">
@@ -608,6 +621,13 @@ export default function QuestionDetailPage({
                 {detailedExplanationError}
               </div>
             )}
+
+            {question.detailedExplanation &&
+              question.explanationContentUpdatedAt !== question.contentUpdatedAt && (
+                <div className="analysis-error" role="status">
+                  题目内容已更新，当前详解可能已过期，建议重新生成。
+                </div>
+              )}
 
             {question.detailedExplanation ? (
               <div className="detailed-explanation-card">
@@ -665,6 +685,14 @@ export default function QuestionDetailPage({
                     {followUpError}
                   </div>
                 )}
+
+                {question.followUpChats &&
+                  question.followUpChats.length > 0 &&
+                  question.followUpContentUpdatedAt !== question.contentUpdatedAt && (
+                    <div className="analysis-error" role="status">
+                      题目内容已更新，当前追问上下文可能已过期。
+                    </div>
+                  )}
 
                 <div className="followup-input-area">
                   <textarea

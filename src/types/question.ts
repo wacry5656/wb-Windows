@@ -49,6 +49,9 @@ export interface QuestionAnalysis {
 export interface Question {
   id: string;
   title: string;
+  questionText: string;
+  userAnswer: string;
+  correctAnswer: string;
   // Legacy display field kept for UI compatibility while imageRefs are introduced.
   image: string;
   imageRefs: ImageRef[];
@@ -58,6 +61,7 @@ export interface Question {
   source: string;
   createdAt: string;
   updatedAt: string;
+  contentUpdatedAt: string;
   deleted: boolean;
   deletedAt?: string;
   syncStatus: QuestionSyncStatus;
@@ -70,11 +74,15 @@ export interface Question {
   nextReviewAt?: string;
   reviewStatus: QuestionReviewStatus;
   analysis?: QuestionAnalysis;
+  analysisContentUpdatedAt?: string;
   detailedExplanation?: string;
   detailedExplanationUpdatedAt?: string;
+  explanationContentUpdatedAt?: string;
   hint?: string;
   hintUpdatedAt?: string;
+  hintContentUpdatedAt?: string;
   followUpChats?: FollowUpMessage[];
+  followUpContentUpdatedAt?: string;
   // Legacy display field kept for UI compatibility while noteImageRefs are introduced.
   noteImages?: string[];
   noteImageRefs: ImageRef[];

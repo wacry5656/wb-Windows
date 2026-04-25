@@ -129,6 +129,8 @@ function normalizeQuestion(value: unknown): Question | null {
 
   const createdAt = normalizeDateString(question.createdAt) || new Date().toISOString();
   const updatedAt = normalizeDateString(question.updatedAt) || createdAt;
+  const contentUpdatedAt =
+    normalizeDateString(question.contentUpdatedAt) || updatedAt || createdAt;
   const deleted = question.deleted === true;
   const reviewCount =
     typeof question.reviewCount === 'number' && Number.isFinite(question.reviewCount)
@@ -155,6 +157,32 @@ function normalizeQuestion(value: unknown): Question | null {
 
   const normalizedLastReviewedAt = normalizeDateString(question.lastReviewedAt);
   const normalizedReviewStatus = normalizeReviewStatus(question.reviewStatus, reviewCount);
+  const normalizedAnalysis = normalizeQuestionAnalysis(question.analysis);
+  const normalizedDetailedExplanationUpdatedAt = normalizeDateString(
+    question.detailedExplanationUpdatedAt
+  );
+  const normalizedHintUpdatedAt = normalizeDateString(question.hintUpdatedAt);
+  const normalizedFollowUpChats = normalizeFollowUpChats(question.followUpChats);
+  const normalizedAnalysisContentUpdatedAt =
+    normalizeDateString(question.analysisContentUpdatedAt) ||
+    normalizedAnalysis?.updatedAt ||
+    (normalizedAnalysis ? contentUpdatedAt : undefined);
+  const normalizedExplanationContentUpdatedAt =
+    normalizeDateString(question.explanationContentUpdatedAt) ||
+    normalizedDetailedExplanationUpdatedAt ||
+    (typeof question.detailedExplanation === 'string' && question.detailedExplanation.trim()
+      ? contentUpdatedAt
+      : undefined);
+  const normalizedHintContentUpdatedAt =
+    normalizeDateString(question.hintContentUpdatedAt) ||
+    normalizedHintUpdatedAt ||
+    (typeof question.hint === 'string' && question.hint.trim() ? contentUpdatedAt : undefined);
+  const normalizedFollowUpContentUpdatedAt =
+    normalizeDateString(question.followUpContentUpdatedAt) ||
+    getLatestFollowUpCreatedAt(normalizedFollowUpChats) ||
+    (normalizedFollowUpChats && normalizedFollowUpChats.length > 0
+      ? contentUpdatedAt
+      : undefined);
   const nextReviewAt =
     normalizeDateString(question.nextReviewAt) ||
     (reviewCount > 0
@@ -164,6 +192,11 @@ function normalizeQuestion(value: unknown): Question | null {
   return {
     id: question.id,
     title: question.title.trim(),
+    questionText:
+      typeof question.questionText === 'string' ? question.questionText : '',
+    userAnswer: typeof question.userAnswer === 'string' ? question.userAnswer : '',
+    correctAnswer:
+      typeof question.correctAnswer === 'string' ? question.correctAnswer : '',
     image,
     imageRefs,
     category: isSubject(question.category) ? question.category : DEFAULT_SUBJECT,
@@ -173,6 +206,7 @@ function normalizeQuestion(value: unknown): Question | null {
     source: typeof question.source === 'string' ? question.source.trim() : '',
     createdAt,
     updatedAt,
+    contentUpdatedAt,
     deleted,
     deletedAt: deleted ? normalizeDateString(question.deletedAt) || updatedAt : undefined,
     syncStatus: normalizeSyncStatus(question.syncStatus),
@@ -187,19 +221,19 @@ function normalizeQuestion(value: unknown): Question | null {
     lastReviewedAt: normalizedLastReviewedAt || undefined,
     nextReviewAt,
     reviewStatus: normalizedReviewStatus,
-    analysis: normalizeQuestionAnalysis(question.analysis),
+    analysis: normalizedAnalysis,
+    analysisContentUpdatedAt: normalizedAnalysisContentUpdatedAt,
     detailedExplanation:
       typeof question.detailedExplanation === 'string'
         ? question.detailedExplanation
         : undefined,
-    detailedExplanationUpdatedAt:
-      typeof question.detailedExplanationUpdatedAt === 'string'
-        ? question.detailedExplanationUpdatedAt
-        : undefined,
+    detailedExplanationUpdatedAt: normalizedDetailedExplanationUpdatedAt,
+    explanationContentUpdatedAt: normalizedExplanationContentUpdatedAt,
     hint: typeof question.hint === 'string' ? question.hint : undefined,
-    hintUpdatedAt:
-      typeof question.hintUpdatedAt === 'string' ? question.hintUpdatedAt : undefined,
-    followUpChats: normalizeFollowUpChats(question.followUpChats),
+    hintUpdatedAt: normalizedHintUpdatedAt,
+    hintContentUpdatedAt: normalizedHintContentUpdatedAt,
+    followUpChats: normalizedFollowUpChats,
+    followUpContentUpdatedAt: normalizedFollowUpContentUpdatedAt,
     noteImages:
       noteImageRefs.length > 0
         ? noteImageRefs.map((ref) => getImageRefDisplaySrc(ref))
@@ -246,7 +280,7 @@ function normalizeQuestionAnalysis(value: unknown): Question['analysis'] {
       typeof analysis.studyAdvice === 'string'
         ? analysis.studyAdvice
         : buildLegacyStudyAdvice(analysis),
-    updatedAt: analysis.updatedAt,
+    updatedAt: normalizeDateString(analysis.updatedAt) || new Date().toISOString(),
     source: analysis.source,
   };
 }
@@ -316,6 +350,24 @@ function normalizeFollowUpChats(value: unknown): FollowUpMessage[] | undefined {
     .filter((item) => item.content);
 
   return chats.length > 0 ? chats : undefined;
+}
+
+function getLatestFollowUpCreatedAt(
+  chats: FollowUpMessage[] | undefined
+): string | undefined {
+  if (!chats || chats.length === 0) {
+    return undefined;
+  }
+
+  return chats.reduce<string | undefined>((latest, chat) => {
+    if (!latest) {
+      return chat.createdAt;
+    }
+
+    return new Date(chat.createdAt).getTime() > new Date(latest).getTime()
+      ? chat.createdAt
+      : latest;
+  }, undefined);
 }
 
 function normalizeImageRefs(

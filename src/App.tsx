@@ -178,7 +178,14 @@ export default function App() {
     setSyncStatusText('正在同步...');
     try {
       const result = await window.electronAPI.syncQuestions(latestQuestionsRef.current);
-      const remoteQuestions = normalizeQuestions(result.records);
+      if (!result || !Array.isArray(result.records)) {
+        throw new Error('SYNC_INVALID_RECORDS');
+      }
+
+      const remoteQuestions = normalizeQuestions(result.records).map((question) => ({
+        ...question,
+        syncStatus: 'synced' as const,
+      }));
       setQuestions(remoteQuestions);
       persistQuestionsImmediately(remoteQuestions);
       setSyncStatusText(`同步完成：${remoteQuestions.length} 题`);

@@ -11,12 +11,15 @@ import {
 
 export async function generateAnalysisUpdates(
   question: Question
-): Promise<Pick<Question, 'analysis'>> {
+): Promise<Pick<Question, 'analysis' | 'analysisContentUpdatedAt'>> {
   const image = await resolveQuestionImageForAi(question);
   const result = await generateQuestionAnalysisRequest({
     image,
     title: question.title,
     subject: question.category,
+    questionText: question.questionText,
+    userAnswer: question.userAnswer,
+    correctAnswer: question.correctAnswer,
   });
   const difficultyScore = result.difficulty;
 
@@ -42,42 +45,54 @@ export async function generateAnalysisUpdates(
       updatedAt: new Date().toISOString(),
       source: 'ai',
     },
+    analysisContentUpdatedAt: question.contentUpdatedAt,
   };
 }
 
 export async function generateDetailedExplanationUpdates(
   question: Question
 ): Promise<
-  Pick<Question, 'detailedExplanation' | 'detailedExplanationUpdatedAt'>
+  Pick<
+    Question,
+    'detailedExplanation' | 'detailedExplanationUpdatedAt' | 'explanationContentUpdatedAt'
+  >
 > {
   const image = await resolveQuestionImageForAi(question);
   const result = await generateQuestionExplanationRequest({
     image,
     title: question.title,
     subject: question.category,
+    questionText: question.questionText,
+    userAnswer: question.userAnswer,
+    correctAnswer: question.correctAnswer,
   });
   const cleanedExplanation = cleanExplanationText(result.explanation);
 
   return {
     detailedExplanation: cleanedExplanation || result.explanation.trim(),
     detailedExplanationUpdatedAt: new Date().toISOString(),
+    explanationContentUpdatedAt: question.contentUpdatedAt,
   };
 }
 
 export async function generateHintUpdates(
   question: Question
-): Promise<Pick<Question, 'hint' | 'hintUpdatedAt'>> {
+): Promise<Pick<Question, 'hint' | 'hintUpdatedAt' | 'hintContentUpdatedAt'>> {
   const image = await resolveQuestionImageForAi(question);
   const result = await generateQuestionHintRequest({
     image,
     title: question.title,
     subject: question.category,
+    questionText: question.questionText,
+    userAnswer: question.userAnswer,
+    correctAnswer: question.correctAnswer,
   });
   const cleanedHint = cleanExplanationText(result.hint).replace(/\n{2,}/g, '\n').trim();
 
   return {
     hint: cleanedHint || result.hint.trim(),
     hintUpdatedAt: new Date().toISOString(),
+    hintContentUpdatedAt: question.contentUpdatedAt,
   };
 }
 
@@ -86,13 +101,16 @@ export async function generateFollowUpUpdates(
   userMessage: string
 ): Promise<{
   answer: string;
-  updates: Pick<Question, 'followUpChats'>;
+  updates: Pick<Question, 'followUpChats' | 'followUpContentUpdatedAt'>;
 }> {
   const image = await resolveQuestionImageForAi(question);
   const result = await generateFollowUpRequest({
     image,
     title: question.title,
     subject: question.category,
+    questionText: question.questionText,
+    userAnswer: question.userAnswer,
+    correctAnswer: question.correctAnswer,
     detailedExplanation: question.detailedExplanation || '',
     chatHistory: question.followUpChats || [],
     question: userMessage,
@@ -107,6 +125,7 @@ export async function generateFollowUpUpdates(
     answer: cleanedAnswer,
     updates: {
       followUpChats: [...(question.followUpChats || []), newUserMsg, newAssistantMsg],
+      followUpContentUpdatedAt: question.contentUpdatedAt,
     },
   };
 }

@@ -473,9 +473,23 @@ async function syncQuestionsWithServer(_event, questions) {
     throw error;
   }
 
-  const remoteRecords = Array.isArray(responseJson?.records)
-    ? responseJson.records
-    : [];
+  if (!responseJson || !Object.prototype.hasOwnProperty.call(responseJson, 'records')) {
+    appendMainProcessLog('sync:error', {
+      message: 'SYNC_INVALID_RESPONSE',
+      details: responseJson ?? responseText,
+    });
+    throw new Error('SYNC_INVALID_RESPONSE');
+  }
+
+  if (!Array.isArray(responseJson.records)) {
+    appendMainProcessLog('sync:error', {
+      message: 'SYNC_INVALID_RECORDS',
+      details: responseJson.records,
+    });
+    throw new Error('SYNC_INVALID_RECORDS');
+  }
+
+  const remoteRecords = responseJson.records;
 
   appendMainProcessLog('sync:success', {
     received: remoteRecords.length,
@@ -679,6 +693,7 @@ function buildAnalysisPrompt(payload = {}) {
     typeof payload?.subject === 'string' && payload.subject.trim()
       ? payload.subject.trim()
       : '未识别学科';
+  const supplementalContext = buildSupplementalContext(payload);
 
   return [
     '你是一名中国高中理科老师，请像批改错题一样分析题目。',
@@ -686,6 +701,7 @@ function buildAnalysisPrompt(payload = {}) {
     '请根据用户提供的题目图片进行分析，并严格按照 JSON 格式输出结果。',
     `题目标题：${title}`,
     `学科：${subject}`,
+    supplementalContext,
     '',
     '【最高优先级要求】',
     '1. 只输出 JSON，不要输出任何解释、注释、markdown、前后缀。',
@@ -723,6 +739,7 @@ function buildDetailedExplanationPrompt(payload) {
     typeof payload?.subject === 'string' && payload.subject.trim()
       ? payload.subject.trim()
       : '未识别学科';
+  const supplementalContext = buildSupplementalContext(payload);
 
   return [
     '你是一名中国高中理科老师，请根据题目图片生成详细讲解。',
@@ -739,6 +756,7 @@ function buildDetailedExplanationPrompt(payload) {
     '',
     `题目标题：${title}`,
     `预估学科：${subject}`,
+    supplementalContext,
     '',
     '输出结构如下（使用普通文本表达）：',
     '题型判断：',
@@ -787,6 +805,35 @@ function buildHintPrompt() {
     '输出目标：',
     '帮助学生继续独立思考，而不是直接看答案。',
   ].join('\n');
+}
+
+function buildSupplementalContext(payload = {}) {
+  const questionText =
+    typeof payload?.questionText === 'string' ? payload.questionText.trim() : '';
+  const userAnswer =
+    typeof payload?.userAnswer === 'string' ? payload.userAnswer.trim() : '';
+  const correctAnswer =
+    typeof payload?.correctAnswer === 'string' ? payload.correctAnswer.trim() : '';
+
+  const lines = [];
+
+  if (questionText) {
+    lines.push(`补充题干：${questionText}`);
+  }
+
+  if (userAnswer) {
+    lines.push(`学生作答：${userAnswer}`);
+  }
+
+  if (correctAnswer) {
+    lines.push(`标准答案：${correctAnswer}`);
+  }
+
+  if (lines.length === 0) {
+    return '';
+  }
+
+  return ['补充文本信息：', ...lines].join('\n');
 }
 
 function normalizeStringArray(value, maxLength) {
@@ -948,6 +995,9 @@ async function generateQuestionAnalysis(_event, payload) {
     imageLength: image.length,
     title,
     subject,
+    hasQuestionText: Boolean(payload.questionText),
+    hasUserAnswer: Boolean(payload.userAnswer),
+    hasCorrectAnswer: Boolean(payload.correctAnswer),
   });
 
   const response = await fetchWithTimeout(
@@ -1074,6 +1124,9 @@ async function generateQuestionExplanation(_event, payload) {
     imageLength: image.length,
     title,
     subject,
+    hasQuestionText: Boolean(payload.questionText),
+    hasUserAnswer: Boolean(payload.userAnswer),
+    hasCorrectAnswer: Boolean(payload.correctAnswer),
   });
 
   const response = await fetchWithTimeout(
@@ -1190,6 +1243,9 @@ async function generateQuestionHint(_event, payload) {
     imageLength: image.length,
     title,
     subject,
+    hasQuestionText: Boolean(payload.questionText),
+    hasUserAnswer: Boolean(payload.userAnswer),
+    hasCorrectAnswer: Boolean(payload.correctAnswer),
   });
 
   const response = await fetchWithTimeout(
@@ -1276,6 +1332,12 @@ async function generateFollowUp(_event, payload) {
   const image = typeof payload.image === 'string' ? payload.image.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
+  const questionText =
+    typeof payload.questionText === 'string' ? payload.questionText.trim() : '';
+  const userAnswer =
+    typeof payload.userAnswer === 'string' ? payload.userAnswer.trim() : '';
+  const correctAnswer =
+    typeof payload.correctAnswer === 'string' ? payload.correctAnswer.trim() : '';
   const detailedExplanation = typeof payload.detailedExplanation === 'string' ? payload.detailedExplanation.trim() : '';
   const userQuestion = typeof payload.question === 'string' ? payload.question.trim() : '';
   const chatHistory = Array.isArray(payload.chatHistory) ? payload.chatHistory : [];
@@ -1331,6 +1393,9 @@ async function generateFollowUp(_event, payload) {
     text: [
       `题目标题：${title || '未命名题目'}`,
       `学科：${subject || '未识别学科'}`,
+      questionText ? `补充题干：${questionText}` : '',
+      userAnswer ? `学生作答：${userAnswer}` : '',
+      correctAnswer ? `标准答案：${correctAnswer}` : '',
       detailedExplanation ? `\n已有详解：\n${detailedExplanation}` : '',
       '\n请基于以上题目和详解内容，回答学生的追问。',
     ].filter(Boolean).join('\n'),

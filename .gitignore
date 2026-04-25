@@ -40,6 +40,9 @@ yarn-error.log*
 data/questions.json
 data/questions.json.tmp.*
 data/images/
+server/node_modules/
+server/.env
+server/data/
 
 # Generated test assets
 data/test-assets/ai-smoke-results.json

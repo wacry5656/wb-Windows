@@ -34,21 +34,33 @@ export interface ElectronApi {
     image: string;
     title?: string;
     subject?: string;
+    questionText?: string;
+    userAnswer?: string;
+    correctAnswer?: string;
   }) => Promise<QwenAnalysisResponse>;
   generateQuestionExplanation: (payload: {
     image: string;
     title: string;
     subject: string;
+    questionText?: string;
+    userAnswer?: string;
+    correctAnswer?: string;
   }) => Promise<QwenDetailedExplanationResponse>;
   generateQuestionHint: (payload: {
     image: string;
     title: string;
     subject: string;
+    questionText?: string;
+    userAnswer?: string;
+    correctAnswer?: string;
   }) => Promise<QwenHintResponse>;
   generateFollowUp: (payload: {
     image: string;
     title: string;
     subject: string;
+    questionText?: string;
+    userAnswer?: string;
+    correctAnswer?: string;
     detailedExplanation: string;
     chatHistory: FollowUpMessage[];
     question: string;

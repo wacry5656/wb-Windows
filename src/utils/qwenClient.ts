@@ -25,6 +25,9 @@ type GenerateImagePayload = {
   image: string;
   title?: string;
   subject?: string;
+  questionText?: string;
+  userAnswer?: string;
+  correctAnswer?: string;
 };
 
 type FollowUpPayload = GenerateImagePayload & {
@@ -52,6 +55,9 @@ export function generateQuestionAnalysisRequest(
             image: payload.image,
             title: payload.title || '',
             subject: payload.subject || '',
+            questionText: payload.questionText || '',
+            userAnswer: payload.userAnswer || '',
+            correctAnswer: payload.correctAnswer || '',
           })
       : undefined
   );
@@ -67,6 +73,9 @@ export function generateQuestionExplanationRequest(
             image: payload.image,
             title: payload.title || '',
             subject: payload.subject || '',
+            questionText: payload.questionText || '',
+            userAnswer: payload.userAnswer || '',
+            correctAnswer: payload.correctAnswer || '',
           })
       : undefined
   );
@@ -82,6 +91,9 @@ export function generateQuestionHintRequest(
             image: payload.image,
             title: payload.title || '',
             subject: payload.subject || '',
+            questionText: payload.questionText || '',
+            userAnswer: payload.userAnswer || '',
+            correctAnswer: payload.correctAnswer || '',
           })
       : undefined
   );
@@ -97,6 +109,9 @@ export function generateFollowUpRequest(
             image: payload.image,
             title: payload.title || '',
             subject: payload.subject || '',
+            questionText: payload.questionText || '',
+            userAnswer: payload.userAnswer || '',
+            correctAnswer: payload.correctAnswer || '',
             detailedExplanation: payload.detailedExplanation,
             chatHistory: payload.chatHistory,
             question: payload.question,

@@ -20,7 +20,15 @@ export function createQuestion(
   metadataOrOptions: Partial<
     Pick<
       Question,
-      'grade' | 'questionType' | 'source' | 'notes' | 'errorCause' | 'tags'
+      | 'grade'
+      | 'questionType'
+      | 'source'
+      | 'questionText'
+      | 'userAnswer'
+      | 'correctAnswer'
+      | 'notes'
+      | 'errorCause'
+      | 'tags'
     >
   > &
     QuestionMutationOptions = {},
@@ -42,6 +50,9 @@ export function createQuestion(
   return {
     id: createQuestionId(),
     title: title.trim(),
+    questionText: metadata.questionText?.trim() || '',
+    userAnswer: metadata.userAnswer?.trim() || '',
+    correctAnswer: metadata.correctAnswer?.trim() || '',
     image: getImageRefDisplaySrc(imageRef),
     imageRefs: [imageRef],
     category,
@@ -50,6 +61,7 @@ export function createQuestion(
     source: metadata.source?.trim() || '',
     createdAt: timestamp,
     updatedAt: timestamp,
+    contentUpdatedAt: timestamp,
     deleted: false,
     deletedAt: undefined,
     syncStatus: 'pending',
@@ -184,13 +196,16 @@ export function applyQuestionUpdates(
   const timestamp = options.now || new Date().toISOString();
   const nextImageRefs = resolveImageRefs(question, updates, timestamp);
   const nextNoteImageRefs = resolveNoteImageRefs(question, updates, timestamp);
+  const nextImage = resolveNextImage(nextImageRefs, updates.image, question.image);
+  const coreContentChanged = hasCoreContentChanges(question, updates, nextImageRefs, nextImage);
 
   return {
     ...question,
     ...updates,
-    image: resolveNextImage(nextImageRefs, updates.image, question.image),
+    image: nextImage,
     imageRefs: nextImageRefs,
     updatedAt: timestamp,
+    contentUpdatedAt: coreContentChanged ? timestamp : question.contentUpdatedAt,
     syncStatus: nextSyncStatusForMutation(question.syncStatus, updates.syncStatus),
     noteImages:
       nextNoteImageRefs.length > 0
@@ -271,6 +286,65 @@ function nextSyncStatusForMutation(
   }
 
   return resolveNextSyncStatus(currentStatus);
+}
+
+function hasCoreContentChanges(
+  question: Question,
+  updates: Partial<Question>,
+  nextImageRefs: ImageRef[],
+  nextImage: string
+): boolean {
+  const nextTitle =
+    typeof updates.title === 'string' ? updates.title : question.title;
+  const nextQuestionText =
+    typeof updates.questionText === 'string'
+      ? updates.questionText
+      : question.questionText;
+  const nextUserAnswer =
+    typeof updates.userAnswer === 'string' ? updates.userAnswer : question.userAnswer;
+  const nextCorrectAnswer =
+    typeof updates.correctAnswer === 'string'
+      ? updates.correctAnswer
+      : question.correctAnswer;
+  const nextCategory = updates.category ?? question.category;
+  const nextGrade = typeof updates.grade === 'string' ? updates.grade : question.grade;
+  const nextQuestionType =
+    typeof updates.questionType === 'string'
+      ? updates.questionType
+      : question.questionType;
+  const nextSource = typeof updates.source === 'string' ? updates.source : question.source;
+  const nextErrorCause =
+    typeof updates.errorCause === 'string' ? updates.errorCause : question.errorCause;
+  const nextTags = Array.isArray(updates.tags) ? updates.tags : question.tags;
+
+  return (
+    nextTitle !== question.title ||
+    nextQuestionText !== question.questionText ||
+    nextUserAnswer !== question.userAnswer ||
+    nextCorrectAnswer !== question.correctAnswer ||
+    nextImage !== question.image ||
+    !areImageRefsEqual(nextImageRefs, question.imageRefs) ||
+    nextCategory !== question.category ||
+    nextGrade !== question.grade ||
+    nextQuestionType !== question.questionType ||
+    nextSource !== question.source ||
+    nextErrorCause !== question.errorCause ||
+    !areStringArraysEqual(nextTags, question.tags)
+  );
+}
+
+function areStringArraysEqual(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length && left.every((value, index) => value === right[index])
+  );
+}
+
+function areImageRefsEqual(left: ImageRef[], right: ImageRef[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((ref, index) => JSON.stringify(ref) === JSON.stringify(right[index]));
 }
 
 function createQuestionId(): string {
