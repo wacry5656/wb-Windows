@@ -57,6 +57,9 @@ describe('qwenClient', () => {
       image: 'data:image/png;base64,abc',
       title: '测试题目',
       subject: '数学',
+      questionText: '',
+      userAnswer: '',
+      correctAnswer: '',
     });
     expect(global.fetch).not.toHaveBeenCalled();
   });

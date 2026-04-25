@@ -132,7 +132,7 @@ describe('question lifecycle services', () => {
         syncStatus: 'modified',
       })
     );
-    expect(reviewedQuestion.nextReviewAt).toBe('2026-04-19T08:00:00.000Z');
+    expect(reviewedQuestion.nextReviewAt).toBe('2026-04-21T08:00:00.000Z');
   });
 
   test('updateQuestionById refreshes updatedAt and marks sync as modified for content mutations', () => {

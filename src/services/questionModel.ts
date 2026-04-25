@@ -499,15 +499,23 @@ function normalizeSyncStatus(value: unknown): QuestionSyncStatus {
 }
 
 function getReviewIntervalDays(reviewCount: number): number {
-  if (reviewCount <= 1) {
+  if (reviewCount <= 0) {
     return 1;
   }
 
-  if (reviewCount === 2) {
+  if (reviewCount === 1) {
     return 3;
   }
 
-  return 7;
+  if (reviewCount === 2) {
+    return 7;
+  }
+
+  if (reviewCount === 3) {
+    return 14;
+  }
+
+  return 30;
 }
 
 function inferMimeTypeFromDataUrl(dataUrl: string): string | undefined {

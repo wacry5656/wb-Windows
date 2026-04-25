@@ -96,6 +96,11 @@
   cursor: pointer;
 }
 
+.sync-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .sync-status {
   max-width: 150px;
   color: var(--text-muted);

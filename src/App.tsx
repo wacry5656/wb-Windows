@@ -34,6 +34,7 @@ export default function App() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [hasLoadedQuestions, setHasLoadedQuestions] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const latestQuestionsRef = useRef<Question[]>([]);
 
@@ -170,11 +171,16 @@ export default function App() {
   }, []);
 
   const syncQuestions = useCallback(async () => {
+    if (isSyncing) {
+      return;
+    }
+
     if (!window.electronAPI?.syncQuestions) {
       setSyncStatusText('当前环境不支持同步');
       return;
     }
 
+    setIsSyncing(true);
     setSyncStatusText('正在同步...');
     try {
       const localQuestions = latestQuestionsRef.current;
@@ -221,8 +227,10 @@ export default function App() {
         return;
       }
       setSyncStatusText('同步失败，请检查 VPS 配置');
+    } finally {
+      setIsSyncing(false);
     }
-  }, [persistQuestionsImmediately]);
+  }, [isSyncing, persistQuestionsImmediately]);
 
   useEffect(() => {
     let isMounted = true;
@@ -335,8 +343,13 @@ export default function App() {
               </NavLink>
             </nav>
             <div className="sync-area">
-              <button className="sync-button" onClick={syncQuestions}>
-                同步
+              <button
+                className="sync-button"
+                onClick={syncQuestions}
+                disabled={isSyncing}
+                aria-busy={isSyncing}
+              >
+                {isSyncing ? '同步中' : '同步'}
               </button>
               {syncStatusText && <span className="sync-status">{syncStatusText}</span>}
             </div>

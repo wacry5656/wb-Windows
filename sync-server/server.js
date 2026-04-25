@@ -1,4 +1,5 @@
 const http = require('http');
+require('dotenv').config();
 const { Pool } = require('pg');
 
 const port = Number(process.env.PORT || 3017);

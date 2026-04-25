@@ -1,5 +1,6 @@
 # Dependencies
 /node_modules
+/sync-server/node_modules/
 /.pnp
 .pnp.js
 
@@ -40,9 +41,7 @@ yarn-error.log*
 data/questions.json
 data/questions.json.tmp.*
 data/images/
-server/node_modules/
-server/.env
-server/data/
+/server/
 
 # Generated test assets
 data/test-assets/ai-smoke-results.json
