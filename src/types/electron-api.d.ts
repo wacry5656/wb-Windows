@@ -1,12 +1,12 @@
 import type { FollowUpMessage, ImageRef, Question } from './question';
 
 export interface QwenAnalysisResponse {
-  subject: string;
   knowledge_points: string[];
   common_mistakes: string[];
+  solution_methods?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   cautions: string[];
-  analysis_summary: string;
+  analysis_summary?: string;
 }
 
 export interface QwenDetailedExplanationResponse {
@@ -32,6 +32,8 @@ export interface ElectronApi {
   }>;
   generateQuestionAnalysis: (payload: {
     image: string;
+    title?: string;
+    subject?: string;
   }) => Promise<QwenAnalysisResponse>;
   generateQuestionExplanation: (payload: {
     image: string;
@@ -67,6 +69,13 @@ export interface ElectronApi {
   readImageDataUrl?: (payload: {
     uri: string;
   }) => Promise<string>;
+  syncQuestions?: (
+    questions: Question[]
+  ) => Promise<{
+    ok: boolean;
+    serverTime?: string;
+    records: unknown[];
+  }>;
 }
 
 declare global {

@@ -14,14 +14,29 @@ const DEFAULT_QWEN_BASE_URL =
 const DEFAULT_QWEN_MODEL = 'qwen3.6-plus';
 const DEFAULT_AI_TIMEOUT_MS = 60000;
 const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
-// Keep in sync with src/constants/subjects.ts
-const ALLOWED_SUBJECTS = new Set(['物理', '数学', '化学', '生物']);
-
 // Write queue to prevent concurrent file writes and data corruption
 let writeQueue = Promise.resolve();
 
 let loadedEnvPath = null;
 let resolvedApiKeySource = null;
+
+function getPortableExecutableDirectory() {
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+
+  if (typeof portableDir !== 'string' || !portableDir.trim()) {
+    return null;
+  }
+
+  return path.resolve(portableDir.trim());
+}
+
+function getUserDataDirectory() {
+  try {
+    return app.getPath('userData');
+  } catch (_error) {
+    return path.resolve(process.cwd(), '.wrong-question-assistant');
+  }
+}
 
 function getMainProcessLogPath() {
   return path.join(getStorageBaseDirectory(), 'main-process.log');
@@ -52,7 +67,13 @@ function getStorageBaseDirectory() {
     return path.resolve(__dirname, '../data');
   }
 
-  return path.join(path.dirname(process.execPath), 'data');
+  const portableDirectory = getPortableExecutableDirectory();
+
+  if (portableDirectory) {
+    return path.join(portableDirectory, 'data');
+  }
+
+  return path.join(getUserDataDirectory(), 'data');
 }
 
 function getQuestionsStorageFilePath() {
@@ -64,7 +85,19 @@ function getImagesStorageDirectory() {
 }
 
 function getLegacyQuestionsStorageFilePath() {
-  return path.join(app.getPath('userData'), 'questions.json');
+  return path.join(getUserDataDirectory(), 'questions.json');
+}
+
+function getLegacyQuestionsStorageFilePaths() {
+  const candidates = [getLegacyQuestionsStorageFilePath()];
+
+  if (!isDev) {
+    candidates.push(
+      path.join(path.dirname(process.execPath), 'data', 'questions.json')
+    );
+  }
+
+  return [...new Set(candidates.map((filePath) => path.resolve(filePath)))];
 }
 
 async function readQuestionsArrayFromFile(filePath) {
@@ -83,49 +116,87 @@ async function readQuestionsArrayFromFile(filePath) {
 
 async function ensureLegacyQuestionsMigrated() {
   const nextStorageFilePath = getQuestionsStorageFilePath();
-  const legacyStorageFilePath = getLegacyQuestionsStorageFilePath();
+  const resolvedNextStorageFilePath = path.resolve(nextStorageFilePath);
 
-  if (
-    !fs.existsSync(legacyStorageFilePath) ||
-    nextStorageFilePath === legacyStorageFilePath
-  ) {
+  if (fs.existsSync(resolvedNextStorageFilePath)) {
     return;
   }
 
-  try {
-    const [nextQuestions, legacyQuestions] = await Promise.all([
-      readQuestionsArrayFromFile(nextStorageFilePath),
-      readQuestionsArrayFromFile(legacyStorageFilePath),
-    ]);
-
-    const shouldUseLegacyData =
-      legacyQuestions.length > 0 &&
-      (!fs.existsSync(nextStorageFilePath) || nextQuestions.length === 0);
-
-    if (!shouldUseLegacyData) {
-      return;
+  for (const legacyStorageFilePath of getLegacyQuestionsStorageFilePaths()) {
+    if (
+      legacyStorageFilePath === resolvedNextStorageFilePath ||
+      !fs.existsSync(legacyStorageFilePath)
+    ) {
+      continue;
     }
 
-    await fs.promises.mkdir(path.dirname(nextStorageFilePath), {
-      recursive: true,
-    });
-    await fs.promises.copyFile(legacyStorageFilePath, nextStorageFilePath);
-  } catch (error) {
-    console.warn('Failed to migrate legacy questions storage.', error);
+    try {
+      const legacyQuestions = await readQuestionsArrayFromFile(
+        legacyStorageFilePath
+      );
+
+      if (legacyQuestions.length === 0) {
+        continue;
+      }
+
+      await fs.promises.mkdir(path.dirname(resolvedNextStorageFilePath), {
+        recursive: true,
+      });
+      await fs.promises.copyFile(
+        legacyStorageFilePath,
+        resolvedNextStorageFilePath
+      );
+      appendMainProcessLog('storage:migrate-legacy-questions', {
+        from: legacyStorageFilePath,
+        to: resolvedNextStorageFilePath,
+        count: legacyQuestions.length,
+      });
+      return;
+    } catch (error) {
+      console.warn('Failed to migrate legacy questions storage.', error);
+    }
   }
 }
 
-function loadEnvFile() {
-  const candidatePaths = [
-    path.resolve(path.dirname(process.execPath), '.env'),
-    path.resolve(process.resourcesPath || '', '.env'),
-    path.resolve(process.cwd(), '.env'),
-    path.resolve(process.cwd(), '.env.local'),
-    path.resolve(__dirname, '../.env'),
-    path.resolve(__dirname, '../.env.local'),
-  ];
+function getEnvCandidatePaths() {
+  const portableDirectory = getPortableExecutableDirectory();
+  const candidateDirectories = [
+    portableDirectory,
+    portableDirectory ? path.resolve(portableDirectory, '..') : null,
+    path.dirname(process.execPath),
+    path.resolve(path.dirname(process.execPath), '..'),
+    typeof process.resourcesPath === 'string' && process.resourcesPath
+      ? process.resourcesPath
+      : null,
+    getUserDataDirectory(),
+    process.cwd(),
+    path.resolve(__dirname, '../'),
+  ].filter(Boolean);
 
-  for (const envPath of candidatePaths) {
+  const candidatePaths = [];
+
+  for (const directory of candidateDirectories) {
+    candidatePaths.push(path.resolve(directory, '.env'));
+    candidatePaths.push(path.resolve(directory, '.env.local'));
+  }
+
+  return [...new Set(candidatePaths)];
+}
+
+function hasConfiguredApiKey(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalizedValue = value.trim();
+
+  return Boolean(
+    normalizedValue && normalizedValue.toLowerCase() !== 'your_api_key_here'
+  );
+}
+
+function loadEnvFile() {
+  for (const envPath of getEnvCandidatePaths()) {
     if (!fs.existsSync(envPath)) {
       continue;
     }
@@ -137,6 +208,7 @@ function loadEnvFile() {
     });
 
     if (
+      loadedEnvPath === null &&
       !result.error &&
       result.parsed &&
       Object.keys(result.parsed).length > 0
@@ -146,6 +218,12 @@ function loadEnvFile() {
   }
 
   normalizeApiKeyNames();
+  appendMainProcessLog('config:env-loaded', {
+    envFilePath: loadedEnvPath,
+    keyConfigured: hasConfiguredApiKey(process.env.DASHSCOPE_API_KEY),
+    keySource: resolvedApiKeySource,
+    candidatePaths: getEnvCandidatePaths(),
+  });
 }
 
 function normalizeApiKeyNames() {
@@ -158,7 +236,7 @@ function normalizeApiKeyNames() {
 
   const matchedKey = aliases.find((keyName) => {
     const value = process.env[keyName];
-    return typeof value === 'string' && value.trim().length > 0;
+    return hasConfiguredApiKey(value);
   });
 
   resolvedApiKeySource = matchedKey ?? null;
@@ -175,7 +253,7 @@ function getApiConfigStatus() {
     provider: 'qwen',
     envFileLoaded: Boolean(loadedEnvPath),
     envFilePath: loadedEnvPath,
-    keyConfigured: typeof key === 'string' && key.trim().length > 0,
+    keyConfigured: hasConfiguredApiKey(key),
     keySource: resolvedApiKeySource,
     storageFilePath: getQuestionsStorageFilePath(),
   };
@@ -273,6 +351,142 @@ async function readImageDataUrlFromFile(_event, payload) {
   const mimeType = getMimeTypeFromPath(resolvedPath);
 
   return `data:${mimeType};base64,${buffer.toString('base64')}`;
+}
+
+async function materializeImageRefForSync(ref) {
+  if (!ref || typeof ref !== 'object') {
+    return ref;
+  }
+
+  if (ref.storage === 'inline' && typeof ref.dataUrl === 'string') {
+    return ref;
+  }
+
+  const uri = typeof ref.uri === 'string' ? ref.uri : '';
+  if (!isFileImageUri(uri)) {
+    return ref;
+  }
+
+  try {
+    const filePath = resolveImageFilePath(uri, { requireExists: true });
+    const buffer = await fs.promises.readFile(filePath);
+    const mimeType = ref.mimeType || getMimeTypeFromPath(filePath);
+    return {
+      id: ref.id,
+      kind: ref.kind,
+      createdAt: ref.createdAt,
+      mimeType,
+      storage: 'inline',
+      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+    };
+  } catch (error) {
+    appendMainProcessLog('sync:image-inline-skip', {
+      id: ref.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return ref;
+  }
+}
+
+async function materializeQuestionForSync(question) {
+  if (!question || typeof question !== 'object') {
+    return question;
+  }
+
+  const imageRefs = Array.isArray(question.imageRefs)
+    ? await Promise.all(question.imageRefs.map(materializeImageRefForSync))
+    : [];
+  const noteImageRefs = Array.isArray(question.noteImageRefs)
+    ? await Promise.all(question.noteImageRefs.map(materializeImageRefForSync))
+    : [];
+  const firstQuestionImage = imageRefs[0];
+  const legacyImage =
+    typeof firstQuestionImage?.dataUrl === 'string'
+      ? firstQuestionImage.dataUrl
+      : question.image;
+
+  return {
+    ...question,
+    image: legacyImage,
+    imageRefs,
+    noteImages: noteImageRefs
+      .map((ref) => (typeof ref?.dataUrl === 'string' ? ref.dataUrl : null))
+      .filter(Boolean),
+    noteImageRefs,
+  };
+}
+
+async function syncQuestionsWithServer(_event, questions) {
+  const syncApiUrl = process.env.SYNC_API_URL?.trim();
+  const syncToken = process.env.SYNC_TOKEN?.trim();
+  const deviceId = process.env.SYNC_DEVICE_ID?.trim() || `windows-${require('os').hostname()}`;
+
+  if (!syncApiUrl) {
+    throw new Error('SYNC_API_URL_NOT_CONFIGURED');
+  }
+
+  if (!syncToken) {
+    throw new Error('SYNC_TOKEN_NOT_CONFIGURED');
+  }
+
+  const nextQuestions = Array.isArray(questions) ? questions : [];
+  const records = await Promise.all(nextQuestions.map(materializeQuestionForSync));
+
+  appendMainProcessLog('sync:start', {
+    deviceId,
+    count: records.length,
+    url: syncApiUrl,
+  });
+
+  const response = await fetchWithTimeout(
+    syncApiUrl,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${syncToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        deviceId,
+        records,
+      }),
+    },
+    120000
+  );
+
+  const responseText = await response.text();
+  let responseJson = null;
+  try {
+    responseJson = JSON.parse(responseText);
+  } catch (_error) {
+    responseJson = null;
+  }
+
+  if (!response.ok) {
+    const error = new Error('SYNC_REQUEST_FAILED');
+    error.status = response.status;
+    error.details = responseJson ?? responseText;
+    appendMainProcessLog('sync:error', {
+      status: response.status,
+      details: responseJson ?? responseText,
+    });
+    throw error;
+  }
+
+  const remoteRecords = Array.isArray(responseJson?.records)
+    ? responseJson.records
+    : [];
+
+  appendMainProcessLog('sync:success', {
+    received: remoteRecords.length,
+    serverTime: responseJson?.serverTime,
+  });
+
+  return {
+    ok: true,
+    serverTime: responseJson?.serverTime,
+    records: remoteRecords,
+  };
 }
 
 const MAX_WRITE_QUEUE_LENGTH = 50;
@@ -456,70 +670,47 @@ function createResourceId(prefix) {
   return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
-function buildAnalysisPrompt() {
+function buildAnalysisPrompt(payload = {}) {
+  const title =
+    typeof payload?.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : '未命名题目';
+  const subject =
+    typeof payload?.subject === 'string' && payload.subject.trim()
+      ? payload.subject.trim()
+      : '未识别学科';
+
   return [
-    '你是一名中国高中理科老师，擅长针对具体题目进行精确分析。',
+    '你是一名中国高中理科老师，请像批改错题一样分析题目。',
     '',
     '请根据用户提供的题目图片进行分析，并严格按照 JSON 格式输出结果。',
+    `题目标题：${title}`,
+    `学科：${subject}`,
     '',
     '【最高优先级要求】',
     '1. 只输出 JSON，不要输出任何解释、注释、markdown、前后缀。',
-    '2. 所有字段必须存在。',
+    '2. 只保留指定字段，所有字段必须存在。',
     '3. 所有内容必须结合题目图片中的具体条件，不允许输出泛化、模板化内容。',
     '4. 不允许编造题目中不存在的信息。',
-    '5. 如果题目部分无法识别，请基于可见信息尽量合理分析。',
+    '5. 如果题目部分无法识别，请基于可见信息分析，并在对应字段里写明需要确认的条件。',
     '',
     '输出格式：',
     '{',
-    '  "subject": "",',
     '  "knowledge_points": [],',
     '  "common_mistakes": [],',
+    '  "solution_methods": [],',
     '  "difficulty": 1,',
-    '  "cautions": [],',
-    '  "analysis_summary": ""',
+    '  "cautions": []',
     '}',
     '',
     '字段要求：',
-    '【1. subject】',
-    '- 只能从：数学 / 物理 / 化学 / 生物 中选择。',
-    '- 必须根据题目实际内容判断。',
-    '',
-    '【2. knowledge_points】',
-    '- 提取本题真正考查的核心知识点。',
-    '- 必须直接对应题目条件，例如函数表达式、物理过程、反应条件、实验装置或图示信息。',
-    '- 使用规范术语，不要写“综合题”“基础知识”这类空词。',
-    '- 常规题给 2 到 3 条；只有在题目明显更复杂时才给 4 到 5 条。',
-    '- 每一条都必须具体、可执行、互不重复。',
-    '- 宁可少写，也不要为了凑数量加入重复或低质量内容。',
-    '',
-    '【3. common_mistakes】',
-    '- 必须写“这道题最容易犯的具体错误”，要能直接对应解题过程。',
-    '- 禁止写“粗心”“计算错误”“审题不清”这类泛化空话。',
-    '- 每一条都必须具体、可执行、互不重复，例如忽略定义域、受力分析遗漏关键力、误把某一状态当平衡状态。',
-    '- 常规题给 2 到 3 条；复杂题最多 4 到 5 条。',
-    '- 宁可少写，也不要为了凑数量输出低质量内容。',
-    '',
-    '【4. difficulty】',
-    '- 评分范围是 1 到 5。',
-    '- 1 = 很简单，2 = 基础题，3 = 中等题，4 = 较难题，5 = 难题。',
-    '- 必须根据题目复杂度判断，不允许默认给中间值。',
-    '',
-    '【5. cautions】',
-    '- 写“解题时必须注意的关键点”，语气像老师的批注提醒。',
-    '- 必须结合题目中的隐藏条件、关键限制、系统选择、边界条件、实验条件或图像信息。',
-    '- 禁止写“注意计算”“认真审题”这类废话。',
-    '- 常规题给 2 到 3 条；复杂题最多 4 到 5 条。',
-    '- 每条都必须具体、可执行、互不重复。',
-    '',
-    '【6. analysis_summary】',
-    '- 用一句话总结本题核心考查内容。',
-    '- 必须具体到方法、定律、模型或题型，不要泛泛描述。',
-    '',
-    '【额外约束】',
-    '- 所有数组字段不能为空，至少给 1 条。',
-    '- 不同字段之间不要重复表达同一个意思。',
-    '- 如果题目中存在公式、图像、物理量、实验条件或关键限定语，分析中必须体现这些具体信息。',
-    '- knowledge_points、common_mistakes、cautions 三类内容遵循“质量优先、数量弹性”的原则：常规 2 到 3 条，复杂题最多 4 到 5 条，宁可少写也不要写废话。',
+    'knowledge_points：本题真正考查的知识点，常规题 2 到 3 条，复杂题最多 5 条。必须具体到题目里的模型、公式、图像、实验条件或限制。',
+    'common_mistakes：这道题最容易犯的具体错误，常规题 2 到 3 条。不要写“粗心”“审题不清”“计算错误”这类空话。',
+    'solution_methods：推荐方法，像老师给学生指出解题抓手，1 到 3 条。要能直接指导下一次做同类题。',
+    'difficulty：1 到 5 的整数。1 是很基础，2 是基础题，3 是中等题，4 是较难题，5 是难题。',
+    'cautions：解题时要特别盯住的关键条件、边界、单位、图像信息、实验条件或限制，常规题 2 到 3 条。',
+    '所有数组至少 1 条。每条用自然中文短句，不要编号，不要项目符号，不要多余特殊符号。',
+    '不同字段之间不要重复表达同一个意思。宁可少写，也不要凑数量。',
   ].join('\n');
 }
 
@@ -569,12 +760,12 @@ function buildDetailedExplanationPrompt(payload) {
     '（总结这一类题的通用解法或规律）',
     '',
     '补充要求：',
-    '- 语言要清晰，适合高中生理解',
-    '- 每一步都要说明“为什么这样做”',
-    '- 不要只给结论，重点讲过程',
-    '- 如果题目条件不完整或图片不清晰，要明确指出不确定之处',
-    '- 不要编造不存在的条件',
-    '- 除公式和变量外，禁止出现英文',
+    '语言要清晰，适合高中生理解。',
+    '每一步都要说明为什么这样做。',
+    '不要只给结论，重点讲过程。',
+    '如果题目条件不完整或图片不清晰，要明确指出不确定之处。',
+    '不要编造不存在的条件。',
+    '除公式和变量外，禁止出现英文。',
   ].join('\n');
 }
 
@@ -699,11 +890,6 @@ function normalizeAnalysisPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('INVALID_JSON');
   }
-  const normalizedSubject =
-    typeof payload.subject === 'string' &&
-    ALLOWED_SUBJECTS.has(payload.subject.trim())
-      ? payload.subject.trim()
-      : '数学';
   const knowledgePoints = ensureNonEmptyArray(
     normalizeStringArray(payload.knowledge_points, 5),
     '需结合题面进一步确认核心知识点'
@@ -716,18 +902,16 @@ function normalizeAnalysisPayload(payload) {
     normalizeStringArray(payload.cautions, 5),
     '需结合题面条件核对已知量与约束条件'
   );
-  const analysisSummary =
-    typeof payload.analysis_summary === 'string' &&
-    payload.analysis_summary.trim()
-      ? payload.analysis_summary.trim()
-      : '需结合题面进一步确认本题的核心考查点。';
+  const solutionMethods = ensureNonEmptyArray(
+    normalizeStringArray(payload.solution_methods, 5),
+    '先分析题目条件，再按模型分步求解'
+  );
   return {
-    subject: normalizedSubject,
     knowledge_points: knowledgePoints,
     common_mistakes: commonMistakes,
+    solution_methods: solutionMethods,
     difficulty: clampDifficulty(payload.difficulty),
     cautions,
-    analysis_summary: analysisSummary,
   };
 }
 
@@ -737,6 +921,8 @@ async function generateQuestionAnalysis(_event, payload) {
   }
 
   const image = typeof payload.image === 'string' ? payload.image.trim() : '';
+  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+  const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
 
   if (!image) {
     throw new Error('MISSING_IMAGE');
@@ -745,6 +931,10 @@ async function generateQuestionAnalysis(_event, payload) {
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
   if (!apiKey) {
+    appendMainProcessLog('analysis:missing-api-key', {
+      envFilePath: loadedEnvPath,
+      keySource: resolvedApiKeySource,
+    });
     throw new Error('MISSING_API_KEY');
   }
 
@@ -756,6 +946,8 @@ async function generateQuestionAnalysis(_event, payload) {
     model,
     imagePrefix: image.slice(0, 32),
     imageLength: image.length,
+    title,
+    subject,
   });
 
   const response = await fetchWithTimeout(
@@ -789,7 +981,7 @@ async function generateQuestionAnalysis(_event, payload) {
               },
               {
                 type: 'text',
-                text: buildAnalysisPrompt(),
+                text: buildAnalysisPrompt(payload),
               },
             ],
           },
@@ -835,10 +1027,10 @@ async function generateQuestionAnalysis(_event, payload) {
   try {
     const normalized = normalizeAnalysisPayload(JSON.parse(jsonString));
     appendMainProcessLog('analysis:generate:success', {
-      subject: normalized.subject,
       knowledgePointsCount: normalized.knowledge_points.length,
       commonMistakesCount: normalized.common_mistakes.length,
       cautionsCount: normalized.cautions.length,
+      solutionMethodsCount: normalized.solution_methods.length,
     });
     return normalized;
   } catch (_error) {
@@ -865,6 +1057,10 @@ async function generateQuestionExplanation(_event, payload) {
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
   if (!apiKey) {
+    appendMainProcessLog('explanation:missing-api-key', {
+      envFilePath: loadedEnvPath,
+      keySource: resolvedApiKeySource,
+    });
     throw new Error('MISSING_API_KEY');
   }
 
@@ -890,7 +1086,7 @@ async function generateQuestionExplanation(_event, payload) {
       },
       body: JSON.stringify({
         model,
-        enable_thinking: false,
+        enable_thinking: true,
         temperature: 0.4,
         messages: [
           {
@@ -977,6 +1173,10 @@ async function generateQuestionHint(_event, payload) {
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
   if (!apiKey) {
+    appendMainProcessLog('hint:missing-api-key', {
+      envFilePath: loadedEnvPath,
+      keySource: resolvedApiKeySource,
+    });
     throw new Error('MISSING_API_KEY');
   }
 
@@ -1087,6 +1287,10 @@ async function generateFollowUp(_event, payload) {
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
   if (!apiKey) {
+    appendMainProcessLog('followup:missing-api-key', {
+      envFilePath: loadedEnvPath,
+      keySource: resolvedApiKeySource,
+    });
     throw new Error('MISSING_API_KEY');
   }
 
@@ -1108,6 +1312,8 @@ async function generateFollowUp(_event, payload) {
         '5. 不要重复已有的详解内容，针对学生的问题给出有针对性的回答',
         '6. 全文必须使用简体中文，不允许输出英文句子、英文段落或中英夹杂解释',
         '7. 只有公式、变量、单位、函数名中允许保留必要字母，除此之外一律用中文',
+        '8. 语气像高中老师当面答疑，具体、耐心，不说空话',
+        '9. 尽量用自然段落表达，不要使用项目符号、加粗符号、代码块或标题装饰',
       ].join('\n'),
     },
   ];
@@ -1301,6 +1507,7 @@ ipcMain.handle('storage:load-questions', loadQuestionsFromFile);
 ipcMain.handle('storage:save-questions', saveQuestionsToFile);
 ipcMain.handle('storage:persist-image', persistImageToFile);
 ipcMain.handle('storage:read-image-data-url', readImageDataUrlFromFile);
+ipcMain.handle('sync:questions', syncQuestionsWithServer);
 
 process.on('uncaughtException', (error) => {
   appendMainProcessLog('process:uncaughtException', {

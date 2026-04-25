@@ -13,19 +13,32 @@ export async function generateAnalysisUpdates(
   question: Question
 ): Promise<Pick<Question, 'analysis'>> {
   const image = await resolveQuestionImageForAi(question);
-  const result = await generateQuestionAnalysisRequest({ image });
+  const result = await generateQuestionAnalysisRequest({
+    image,
+    title: question.title,
+    subject: question.category,
+  });
   const difficultyScore = result.difficulty;
 
   return {
     analysis: {
-      subject: result.subject,
       difficulty: mapDifficulty(difficultyScore),
       difficultyScore,
       commonMistakes: result.common_mistakes,
       knowledgePoints: result.knowledge_points,
+      solutionMethods:
+        result.solution_methods && result.solution_methods.length > 0
+          ? result.solution_methods
+          : result.analysis_summary
+            ? [result.analysis_summary]
+            : [],
       cautions: result.cautions,
-      analysisSummary: result.analysis_summary,
-      studyAdvice: `\u91CD\u70B9\u590D\u4E60\uFF1A${result.knowledge_points.join('\u3001')}\u3002\u6CE8\u610F\u907F\u514D\uFF1A${result.common_mistakes[0] || '\u5E38\u89C1\u6613\u9519\u70B9'}\u3002`,
+      notices: result.cautions,
+      studyAdvice: buildStudyAdvice(
+        result.knowledge_points,
+        result.common_mistakes,
+        result.solution_methods
+      ),
       updatedAt: new Date().toISOString(),
       source: 'ai',
     },
@@ -41,7 +54,7 @@ export async function generateDetailedExplanationUpdates(
   const result = await generateQuestionExplanationRequest({
     image,
     title: question.title,
-    subject: question.analysis?.subject || question.category,
+    subject: question.category,
   });
   const cleanedExplanation = cleanExplanationText(result.explanation);
 
@@ -58,7 +71,7 @@ export async function generateHintUpdates(
   const result = await generateQuestionHintRequest({
     image,
     title: question.title,
-    subject: question.analysis?.subject || question.category,
+    subject: question.category,
   });
   const cleanedHint = cleanExplanationText(result.hint).replace(/\n{2,}/g, '\n').trim();
 
@@ -79,7 +92,7 @@ export async function generateFollowUpUpdates(
   const result = await generateFollowUpRequest({
     image,
     title: question.title,
-    subject: question.analysis?.subject || question.category,
+    subject: question.category,
     detailedExplanation: question.detailedExplanation || '',
     chatHistory: question.followUpChats || [],
     question: userMessage,
@@ -108,4 +121,26 @@ function mapDifficulty(score: 1 | 2 | 3 | 4 | 5): QuestionDifficulty {
   }
 
   return '\u4E2D\u7B49';
+}
+
+function buildStudyAdvice(
+  knowledgePoints: string[],
+  commonMistakes: string[],
+  solutionMethods?: string[]
+): string {
+  const parts = [];
+
+  if (knowledgePoints.length > 0) {
+    parts.push(`重点复习：${knowledgePoints.join('、')}。`);
+  }
+
+  if (commonMistakes.length > 0) {
+    parts.push(`易错点：${commonMistakes[0]}。`);
+  }
+
+  if (solutionMethods && solutionMethods.length > 0) {
+    parts.push(`推荐方法：${solutionMethods.join('、')}。`);
+  }
+
+  return parts.join('');
 }

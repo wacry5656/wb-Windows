@@ -95,6 +95,10 @@
   gap: 18px;
 }
 
+.form-group--wide {
+  grid-column: 1 / -1;
+}
+
 .form-label {
   display: inline-block;
   margin-bottom: 9px;
@@ -118,6 +122,12 @@
   transition:
     border-color 180ms ease,
     box-shadow 180ms ease;
+}
+
+.form-textarea {
+  min-height: 88px;
+  resize: vertical;
+  font-family: inherit;
 }
 
 .form-input::placeholder {

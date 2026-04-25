@@ -4,6 +4,7 @@ export type QuestionDifficulty = '\u7B80\u5355' | '\u4E2D\u7B49' | '\u56F0\u96BE
 export type QuestionSyncStatus = 'pending' | 'synced' | 'modified';
 export type QuestionReviewStatus = 'new' | 'reviewing';
 export type ImageStorageType = 'inline' | 'file';
+export type ReviewQuality = 0 | 1 | 2 | 3;
 
 interface BaseImageRef {
   id: string;
@@ -32,15 +33,15 @@ export interface FollowUpMessage {
 }
 
 export interface QuestionAnalysis {
-  subject?: string;
   difficulty: QuestionDifficulty;
   difficultyScore?: 1 | 2 | 3 | 4 | 5;
   commonMistakes: string[];
   knowledgePoints: string[];
+  solutionMethods?: string[];
   cautions?: string[];
-  analysisSummary?: string;
+  notices?: string[];
+  // Legacy summary kept for older saved records and review fallbacks.
   studyAdvice: string;
-  properSolution?: string;
   updatedAt: string;
   source: 'demo' | 'ai';
 }
@@ -52,12 +53,18 @@ export interface Question {
   image: string;
   imageRefs: ImageRef[];
   category: Subject;
+  grade: string;
+  questionType: string;
+  source: string;
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
   deletedAt?: string;
   syncStatus: QuestionSyncStatus;
   notes: string;
+  errorCause: string;
+  tags: string[];
+  masteryLevel: number;
   reviewCount: number;
   lastReviewedAt?: string;
   nextReviewAt?: string;

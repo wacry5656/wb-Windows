@@ -69,6 +69,7 @@
       "output": "dist"
     },
     "extraResources": [
+      ".env",
       ".env.example"
     ],
     "win": {

@@ -21,7 +21,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('physically deleted questions no longer exist in list and review routes', async () => {
+test('active questions remain visible in list and review routes', async () => {
   const payload = JSON.stringify([
     {
       id: 'visible-question',
@@ -70,8 +70,7 @@ test('removed questions cannot be opened through the detail route', async () => 
   expect(await screen.findByText('题目未找到')).toBeInTheDocument();
 });
 
-test('deleting a question saves the remaining questions only', async () => {
-  jest.useFakeTimers();
+test('deleting a question saves a tombstone and hides it from the UI', async () => {
   jest.spyOn(window, 'confirm').mockReturnValue(true);
 
   const saveQuestions = jest.fn().mockResolvedValue({
@@ -146,17 +145,28 @@ test('deleting a question saves the remaining questions only', async () => {
 
   fireEvent.click(await screen.findByRole('button', { name: '删除' }));
 
-  act(() => {
-    jest.advanceTimersByTime(1000);
-  });
-
   await waitFor(() => {
     expect(saveQuestions).toHaveBeenCalled();
   });
 
   const savedQuestions = saveQuestions.mock.calls[saveQuestions.mock.calls.length - 1]?.[0];
-  expect(savedQuestions).toHaveLength(1);
-  expect(savedQuestions[0].title).toBe('保留题目');
+  expect(savedQuestions).toHaveLength(2);
+  expect(savedQuestions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: 'question-1',
+        title: '待删除题目',
+        deleted: true,
+        deletedAt: expect.any(String),
+        syncStatus: 'modified',
+      }),
+      expect.objectContaining({
+        id: 'question-2',
+        title: '保留题目',
+        deleted: false,
+      }),
+    ])
+  );
   expect(screen.queryByText('待删除题目')).not.toBeInTheDocument();
 });
 

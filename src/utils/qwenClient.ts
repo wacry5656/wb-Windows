@@ -1,12 +1,12 @@
 import { FollowUpMessage } from '../types/question';
 
 type AnalysisResponse = {
-  subject: string;
   knowledge_points: string[];
   common_mistakes: string[];
+  solution_methods?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   cautions: string[];
-  analysis_summary: string;
+  analysis_summary?: string;
 };
 
 type ExplanationResponse = {
@@ -47,7 +47,12 @@ export function generateQuestionAnalysisRequest(
 ): Promise<AnalysisResponse> {
   return invokeElectronOnly(
     window.electronAPI?.generateQuestionAnalysis
-      ? () => window.electronAPI!.generateQuestionAnalysis({ image: payload.image })
+      ? () =>
+          window.electronAPI!.generateQuestionAnalysis({
+            image: payload.image,
+            title: payload.title || '',
+            subject: payload.subject || '',
+          })
       : undefined
   );
 }

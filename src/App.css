@@ -81,6 +81,30 @@
   background: rgba(11, 77, 61, 0.12);
 }
 
+.sync-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-button {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 9px 13px;
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+}
+
+.sync-status {
+  max-width: 150px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .workspace {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;

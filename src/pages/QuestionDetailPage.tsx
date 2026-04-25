@@ -6,7 +6,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Question } from '../types/question';
+import type { Question } from '../types/question';
 import './QuestionDetailPageV2.css';
 
 const DEFAULT_AI_TIMEOUT_MS = 60000;
@@ -20,7 +20,7 @@ interface QuestionDetailPageProps {
   onAddNoteImage: (id: string, dataUrl: string) => Promise<void>;
   onDeleteNoteImage: (id: string, noteImageId: string) => void;
   onDeleteQuestion: (id: string) => void;
-  onMarkQuestionReviewed: (id: string) => void;
+  onMarkQuestionReviewed: (id: string, quality?: 0 | 1 | 2 | 3) => void;
   onGenerateAnalysis: (question: Question) => Promise<void>;
   onGenerateDetailedExplanation: (question: Question) => Promise<void>;
   onGenerateHint: (question: Question) => Promise<void>;
@@ -137,7 +137,7 @@ export default function QuestionDetailPage({
   const handleDelete = () => {
     if (
       window.confirm(
-        '确定删除这道错题吗？删除后将直接从本地数据中移除，且不可恢复。'
+        '确定删除这道错题吗？删除后会从错题本中隐藏，并保留同步所需的删除记录。'
       )
     ) {
       onDeleteQuestion(question.id);
@@ -147,7 +147,7 @@ export default function QuestionDetailPage({
 
   const handleMarkReviewed = () => {
     const nextCount = question.reviewCount + 1;
-    onMarkQuestionReviewed(question.id);
+    onMarkQuestionReviewed(question.id, 2);
     alert(`已完成第 ${nextCount} 次复习`);
   };
 
@@ -416,10 +416,24 @@ export default function QuestionDetailPage({
               <div className="detail-meta">
                 <span className="badge badge-category">{question.category}</span>
                 <span className="badge badge-date">{formatDate(question.createdAt)}</span>
+                {question.grade && <span className="badge badge-date">{question.grade}</span>}
+                {question.questionType && (
+                  <span className="badge badge-date">{question.questionType}</span>
+                )}
                 {question.analysis && (
                   <span className="badge badge-analysis">{question.analysis.difficulty}</span>
                 )}
               </div>
+              {(question.source || question.tags.length > 0 || question.errorCause) && (
+                <div className="detail-extra-meta">
+                  {question.source && <span>来源：{question.source}</span>}
+                  {question.tags.length > 0 && (
+                    <span>标签：{question.tags.join('、')}</span>
+                  )}
+                  {question.errorCause && <span>自评错因：{question.errorCause}</span>}
+                  <span>掌握度：{question.masteryLevel}/5</span>
+                </div>
+              )}
             </div>
 
             <div className="detail-actions">
@@ -483,10 +497,6 @@ export default function QuestionDetailPage({
                       : question.analysis.difficulty}
                   </strong>
                 </div>
-                <div className="analysis-card">
-                  <span className="analysis-card__label">学科</span>
-                  <strong>{question.analysis.subject || question.category}</strong>
-                </div>
                 <div className="analysis-card analysis-card--wide">
                   <span className="analysis-card__label">知识点</span>
                   <div className="knowledge-pills">
@@ -503,6 +513,17 @@ export default function QuestionDetailPage({
                     ))}
                   </ul>
                 </div>
+                {question.analysis.solutionMethods &&
+                  question.analysis.solutionMethods.length > 0 && (
+                    <div className="analysis-card analysis-card--wide">
+                      <span className="analysis-card__label">推荐方法</span>
+                      <ul className="analysis-list">
+                        {question.analysis.solutionMethods.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 <div className="analysis-card analysis-card--wide">
                   <span className="analysis-card__label">注意事项</span>
                   {question.analysis.cautions && question.analysis.cautions.length > 0 ? (
@@ -514,10 +535,6 @@ export default function QuestionDetailPage({
                   ) : (
                     <p className="analysis-card__placeholder">暂无</p>
                   )}
-                </div>
-                <div className="analysis-card analysis-card--wide">
-                  <span className="analysis-card__label">分析总结</span>
-                  <p>{question.analysis.analysisSummary || question.analysis.studyAdvice}</p>
                 </div>
               </div>
             ) : (

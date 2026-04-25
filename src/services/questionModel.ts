@@ -82,12 +82,12 @@ export function normalizeQuestions(value: unknown): Question[] {
     .filter((question): question is Question => Boolean(question));
 }
 
-export function isActiveQuestion(_question: Question): boolean {
-  return true;
+export function isActiveQuestion(question: Question): boolean {
+  return question.deleted !== true;
 }
 
 export function getActiveQuestions(questions: Question[]): Question[] {
-  return questions;
+  return questions.filter(isActiveQuestion);
 }
 
 export function resolveNextSyncStatus(_currentStatus?: QuestionSyncStatus): QuestionSyncStatus {
@@ -106,6 +106,12 @@ function normalizeQuestion(value: unknown): Question | null {
     syncStatus?: unknown;
     reviewCount?: unknown;
     notes?: unknown;
+    errorCause?: unknown;
+    tags?: unknown;
+    grade?: unknown;
+    questionType?: unknown;
+    source?: unknown;
+    masteryLevel?: unknown;
     deleted?: unknown;
     deletedAt?: unknown;
     updatedAt?: unknown;
@@ -143,7 +149,7 @@ function normalizeQuestion(value: unknown): Question | null {
   );
   const image = resolveLegacyImage(imageRefs, question.image);
 
-  if (!image || deleted) {
+  if (!image) {
     return null;
   }
 
@@ -161,12 +167,22 @@ function normalizeQuestion(value: unknown): Question | null {
     image,
     imageRefs,
     category: isSubject(question.category) ? question.category : DEFAULT_SUBJECT,
+    grade: typeof question.grade === 'string' ? question.grade.trim() : '',
+    questionType:
+      typeof question.questionType === 'string' ? question.questionType.trim() : '',
+    source: typeof question.source === 'string' ? question.source.trim() : '',
     createdAt,
     updatedAt,
     deleted,
     deletedAt: deleted ? normalizeDateString(question.deletedAt) || updatedAt : undefined,
     syncStatus: normalizeSyncStatus(question.syncStatus),
     notes: typeof question.notes === 'string' ? question.notes : '',
+    errorCause: typeof question.errorCause === 'string' ? question.errorCause : '',
+    tags: normalizeStringArray(question.tags),
+    masteryLevel:
+      typeof question.masteryLevel === 'number' && Number.isFinite(question.masteryLevel)
+        ? Math.max(0, Math.min(5, Math.floor(question.masteryLevel)))
+        : 0,
     reviewCount,
     lastReviewedAt: normalizedLastReviewedAt || undefined,
     nextReviewAt,
@@ -201,12 +217,14 @@ function normalizeQuestionAnalysis(value: unknown): Question['analysis'] {
     commonMistakes?: unknown;
     knowledgePoints?: unknown;
     cautions?: unknown;
+    notices?: unknown;
     difficultyScore?: unknown;
+    solutionMethods?: unknown;
+    recommendedMethods?: unknown;
   };
 
   if (
     typeof analysis.difficulty !== 'string' ||
-    typeof analysis.studyAdvice !== 'string' ||
     typeof analysis.updatedAt !== 'string' ||
     (analysis.source !== 'demo' && analysis.source !== 'ai')
   ) {
@@ -215,24 +233,45 @@ function normalizeQuestionAnalysis(value: unknown): Question['analysis'] {
 
   return {
     ...analysis,
-    subject: typeof analysis.subject === 'string' ? analysis.subject : undefined,
     difficulty: analysis.difficulty,
     difficultyScore: normalizeDifficultyScore(analysis.difficultyScore),
     commonMistakes: normalizeStringArray(analysis.commonMistakes),
     knowledgePoints: normalizeStringArray(analysis.knowledgePoints),
-    cautions: normalizeStringArray(analysis.cautions),
-    analysisSummary:
-      typeof analysis.analysisSummary === 'string'
-        ? analysis.analysisSummary
-        : undefined,
-    studyAdvice: analysis.studyAdvice,
-    properSolution:
-      typeof analysis.properSolution === 'string'
-        ? analysis.properSolution
-        : undefined,
+    solutionMethods: normalizeStringArray(
+      analysis.solutionMethods ?? analysis.recommendedMethods
+    ),
+    cautions: normalizeStringArray(analysis.cautions ?? analysis.notices),
+    notices: normalizeStringArray(analysis.notices ?? analysis.cautions),
+    studyAdvice:
+      typeof analysis.studyAdvice === 'string'
+        ? analysis.studyAdvice
+        : buildLegacyStudyAdvice(analysis),
     updatedAt: analysis.updatedAt,
     source: analysis.source,
   };
+}
+
+function buildLegacyStudyAdvice(
+  analysis: Partial<QuestionAnalysis> & {
+    commonMistakes?: unknown;
+    knowledgePoints?: unknown;
+    solutionMethods?: unknown;
+    recommendedMethods?: unknown;
+  }
+): string {
+  const knowledgePoints = normalizeStringArray(analysis.knowledgePoints);
+  const commonMistakes = normalizeStringArray(analysis.commonMistakes);
+  const solutionMethods = normalizeStringArray(
+    analysis.solutionMethods ?? analysis.recommendedMethods
+  );
+
+  return [
+    knowledgePoints.length > 0 ? `重点复习：${knowledgePoints.join('、')}。` : '',
+    commonMistakes.length > 0 ? `易错点：${commonMistakes[0]}。` : '',
+    solutionMethods.length > 0 ? `推荐方法：${solutionMethods.join('、')}。` : '',
+  ]
+    .filter(Boolean)
+    .join('');
 }
 
 function normalizeDifficultyScore(value: unknown): 1 | 2 | 3 | 4 | 5 | undefined {

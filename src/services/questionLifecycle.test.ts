@@ -1,5 +1,6 @@
 import {
   createFileImageRef,
+  getActiveQuestions,
   getImageRefDisplaySrc,
   normalizeQuestions,
 } from './questionModel';
@@ -84,7 +85,7 @@ describe('question lifecycle services', () => {
     ]);
   });
 
-  test('deleteQuestionById physically removes the record', () => {
+  test('deleteQuestionById keeps a sync tombstone and hides the record from active lists', () => {
     const question = createQuestion(
       '测试题目',
       'data:image/png;base64,abc',
@@ -94,7 +95,16 @@ describe('question lifecycle services', () => {
 
     const nextQuestions = deleteQuestionById([question], question.id);
 
-    expect(nextQuestions).toEqual([]);
+    expect(nextQuestions).toHaveLength(1);
+    expect(nextQuestions[0]).toEqual(
+      expect.objectContaining({
+        id: question.id,
+        deleted: true,
+        deletedAt: expect.any(String),
+        syncStatus: 'modified',
+      })
+    );
+    expect(getActiveQuestions(nextQuestions)).toEqual([]);
   });
 
   test('markQuestionReviewed updates schedule fields together and marks sync as modified', () => {

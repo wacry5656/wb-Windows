@@ -165,7 +165,9 @@
 }
 
 .card-meta,
-.card-analysis {
+.card-analysis,
+.card-extra-meta,
+.card-footer {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -189,10 +191,15 @@
 }
 
 .card-notes,
+.card-extra-meta,
 .analysis-meta,
 .review-count {
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+.card-extra-meta {
+  font-size: 0.86rem;
 }
 
 .analysis-badge {
@@ -208,6 +215,7 @@
 .card-footer {
   padding-top: 12px;
   border-top: 1px solid rgba(31, 41, 51, 0.08);
+  justify-content: space-between;
 }
 
 .list-lightbox {

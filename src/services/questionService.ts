@@ -17,9 +17,26 @@ export function createQuestion(
   title: string,
   image: QuestionImageInput,
   category: Subject,
+  metadataOrOptions: Partial<
+    Pick<
+      Question,
+      'grade' | 'questionType' | 'source' | 'notes' | 'errorCause' | 'tags'
+    >
+  > &
+    QuestionMutationOptions = {},
   options: QuestionMutationOptions = {}
 ): Question {
-  const timestamp = options.now || new Date().toISOString();
+  const isLegacyOptionsOnly =
+    'now' in metadataOrOptions &&
+    !('grade' in metadataOrOptions) &&
+    !('questionType' in metadataOrOptions) &&
+    !('source' in metadataOrOptions) &&
+    !('notes' in metadataOrOptions) &&
+    !('errorCause' in metadataOrOptions) &&
+    !('tags' in metadataOrOptions);
+  const metadata = isLegacyOptionsOnly ? {} : metadataOrOptions;
+  const mutationOptions = isLegacyOptionsOnly ? metadataOrOptions : options;
+  const timestamp = mutationOptions.now || new Date().toISOString();
   const imageRef = resolveImageInput(image, 'question', timestamp);
 
   return {
@@ -28,12 +45,18 @@ export function createQuestion(
     image: getImageRefDisplaySrc(imageRef),
     imageRefs: [imageRef],
     category,
+    grade: metadata.grade?.trim() || '',
+    questionType: metadata.questionType?.trim() || '',
+    source: metadata.source?.trim() || '',
     createdAt: timestamp,
     updatedAt: timestamp,
     deleted: false,
     deletedAt: undefined,
     syncStatus: 'pending',
-    notes: '',
+    notes: metadata.notes || '',
+    errorCause: metadata.errorCause || '',
+    tags: normalizeTags(metadata.tags),
+    masteryLevel: 0,
     reviewCount: 0,
     lastReviewedAt: undefined,
     nextReviewAt: undefined,
@@ -115,7 +138,20 @@ export function deleteQuestionById(
   questions: Question[],
   id: string
 ): Question[] {
-  return questions.filter((question) => question.id !== id);
+  const timestamp = new Date().toISOString();
+
+  return questions.map((question) =>
+    question.id === id
+      ? applyQuestionUpdates(
+          question,
+          {
+            deleted: true,
+            deletedAt: timestamp,
+          },
+          { now: timestamp }
+        )
+      : question
+  );
 }
 
 export function findQuestionById(
@@ -127,15 +163,16 @@ export function findQuestionById(
 
 export function getVisibleStats(questions: Question[]) {
   const analyzedCount = questions.filter((question) => question.analysis).length;
-  const reviewedCount = questions.reduce(
-    (total, question) => total + question.reviewCount,
-    0
-  );
+  const reviewedCount = questions.filter((question) => question.reviewCount > 0).length;
+  const noteCount = questions.filter(
+    (question) => question.notes.trim() || question.noteImageRefs.length > 0
+  ).length;
 
   return {
     totalCount: questions.length,
     analyzedCount,
     reviewedCount,
+    noteCount,
   };
 }
 
@@ -242,4 +279,16 @@ function createQuestionId(): string {
   }
 
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  return tags
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .filter((tag, index, all) => all.indexOf(tag) === index);
 }

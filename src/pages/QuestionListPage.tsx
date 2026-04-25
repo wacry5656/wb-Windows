@@ -26,11 +26,27 @@ export default function QuestionListPage({
   }, [questions]);
 
   const filteredQuestions = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
     return questions.filter((question) => {
       const matchesCategory = filter === 'all' || question.category === filter;
+      const searchableText = [
+        question.title,
+        question.notes,
+        question.grade,
+        question.questionType,
+        question.source,
+        question.errorCause,
+        ...question.tags,
+        ...(question.analysis?.knowledgePoints || []),
+        ...(question.analysis?.commonMistakes || []),
+        ...(question.analysis?.cautions || []),
+        ...(question.analysis?.solutionMethods || []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
       const matchesSearch =
-        question.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        question.notes.toLowerCase().includes(searchTerm.toLowerCase());
+        !normalizedSearch || searchableText.includes(normalizedSearch);
       return matchesCategory && matchesSearch;
     });
   }, [questions, filter, searchTerm]);
@@ -39,7 +55,7 @@ export default function QuestionListPage({
     e.stopPropagation();
     if (
       window.confirm(
-        '确定删除这道错题吗？删除后将直接从本地数据中移除，且不可恢复。'
+        '确定删除这道错题吗？删除后会从错题本中隐藏，并保留同步所需的删除记录。'
       )
     ) {
       onDeleteQuestion(id);
@@ -82,7 +98,7 @@ export default function QuestionListPage({
           <input
             type="text"
             className="search-input"
-            placeholder="搜索标题或笔记内容..."
+            placeholder="搜索标题、笔记、标签、来源或 AI 分析..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -173,7 +189,21 @@ export default function QuestionListPage({
                   <span className="badge badge-date">
                     {formatDate(question.createdAt)}
                   </span>
+                  {question.grade && <span className="badge">{question.grade}</span>}
+                  {question.questionType && (
+                    <span className="badge">{question.questionType}</span>
+                  )}
                 </div>
+
+                {(question.source || question.tags.length > 0 || question.errorCause) && (
+                  <div className="card-extra-meta">
+                    {question.source && <span>来源：{question.source}</span>}
+                    {question.tags.length > 0 && (
+                      <span>标签：{question.tags.join('、')}</span>
+                    )}
+                    {question.errorCause && <span>错因：{question.errorCause}</span>}
+                  </div>
+                )}
 
                 {question.notes && (
                   <p className="card-notes">{question.notes.substring(0, 100)}</p>
@@ -196,6 +226,7 @@ export default function QuestionListPage({
 
                 <div className="card-footer">
                   <span className="review-count">复习 {question.reviewCount} 次</span>
+                  <span className="review-count">掌握度 {question.masteryLevel}/5</span>
                 </div>
               </div>
             </div>

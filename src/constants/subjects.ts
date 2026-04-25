@@ -1,4 +1,4 @@
-export const SUBJECTS = ['物理', '数学', '化学', '生物'] as const;
+export const SUBJECTS = ['数学', '物理', '化学', '生物'] as const;
 
 export type Subject = (typeof SUBJECTS)[number];
 

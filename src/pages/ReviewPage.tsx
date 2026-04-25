@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Question } from '../types/question';
+import { Question, ReviewQuality } from '../types/question';
 import './ReviewPageV2.css';
 
 interface ReviewPageProps {
   questions: Question[];
-  onMarkQuestionReviewed: (id: string) => void;
+  onMarkQuestionReviewed: (id: string, quality?: ReviewQuality) => void;
 }
 
 type SortType =
@@ -12,7 +12,8 @@ type SortType =
   | 'leastReviewed'
   | 'mostReviewed'
   | 'category'
-  | 'difficulty';
+  | 'difficulty'
+  | 'weakness';
 
 export default function ReviewPage({
   questions,
@@ -30,7 +31,16 @@ export default function ReviewPage({
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
       case 'leastReviewed':
-        return sorted.sort((a, b) => a.reviewCount - b.reviewCount);
+        return sorted.sort((a, b) => {
+          const nextA = a.nextReviewAt ? new Date(a.nextReviewAt).getTime() : 0;
+          const nextB = b.nextReviewAt ? new Date(b.nextReviewAt).getTime() : 0;
+
+          if (nextA !== nextB) {
+            return nextA - nextB;
+          }
+
+          return a.reviewCount - b.reviewCount;
+        });
       case 'mostReviewed':
         return sorted.sort((a, b) => b.reviewCount - a.reviewCount);
       case 'category':
@@ -41,6 +51,8 @@ export default function ReviewPage({
             getDifficultyRank(b.analysis?.difficulty, b.analysis?.difficultyScore) -
             getDifficultyRank(a.analysis?.difficulty, a.analysis?.difficultyScore)
         );
+      case 'weakness':
+        return sorted.sort((a, b) => a.masteryLevel - b.masteryLevel);
       default:
         return sorted;
     }
@@ -65,8 +77,8 @@ export default function ReviewPage({
 
   const currentQuestion = sortedQuestions[currentIndex];
 
-  const handleMarkReviewed = () => {
-    onMarkQuestionReviewed(currentQuestion.id);
+  const handleMarkReviewed = (quality: ReviewQuality) => {
+    onMarkQuestionReviewed(currentQuestion.id, quality);
     handleNext();
   };
 
@@ -116,6 +128,7 @@ export default function ReviewPage({
               }}
             >
               <option value="leastReviewed">待复习优先</option>
+              <option value="weakness">薄弱优先</option>
               <option value="mostReviewed">复习次数由多到少</option>
               <option value="recent">最近添加</option>
               <option value="category">按学科</option>
@@ -136,6 +149,7 @@ export default function ReviewPage({
                   <div className="item-meta">
                     <span className="item-category">{q.category}</span>
                     <span className="item-reviewed">复习 {q.reviewCount} 次</span>
+                    <span className="item-reviewed">掌握 {q.masteryLevel}/5</span>
                   </div>
                 </div>
               </div>
@@ -164,9 +178,18 @@ export default function ReviewPage({
               <span className="badge badge-reviewed">
                 复习 {currentQuestion.reviewCount} 次
               </span>
+              <span className="badge badge-reviewed">
+                掌握度 {currentQuestion.masteryLevel}/5
+              </span>
               <span className="badge badge-date">
                 {formatDate(currentQuestion.createdAt)}
               </span>
+              {currentQuestion.grade && (
+                <span className="badge badge-date">{currentQuestion.grade}</span>
+              )}
+              {currentQuestion.questionType && (
+                <span className="badge badge-date">{currentQuestion.questionType}</span>
+              )}
               {currentQuestion.analysis && (
                 <span className="badge badge-difficulty">
                   难度 {currentQuestion.analysis.difficulty}
@@ -175,6 +198,20 @@ export default function ReviewPage({
             </div>
 
             <h2 className="card-title-large">{currentQuestion.title}</h2>
+
+            {(currentQuestion.source ||
+              currentQuestion.tags.length > 0 ||
+              currentQuestion.errorCause) && (
+              <div className="review-extra-meta">
+                {currentQuestion.source && <span>来源：{currentQuestion.source}</span>}
+                {currentQuestion.tags.length > 0 && (
+                  <span>标签：{currentQuestion.tags.join('、')}</span>
+                )}
+                {currentQuestion.errorCause && (
+                  <span>自评错因：{currentQuestion.errorCause}</span>
+                )}
+              </div>
+            )}
 
             <div className="card-image-container">
               <img
@@ -193,8 +230,8 @@ export default function ReviewPage({
 
             {currentQuestion.analysis && (
               <div className="card-notes card-notes--analysis">
-                <h3 className="notes-title">AI 分析摘要</h3>
-                <p className="notes-content">{currentQuestion.analysis.studyAdvice}</p>
+                <h3 className="notes-title">AI 分析</h3>
+                <p className="notes-content">{buildReviewAnalysisText(currentQuestion)}</p>
               </div>
             )}
 
@@ -206,8 +243,17 @@ export default function ReviewPage({
               >
                 上一题
               </button>
-              <button className="btn-mark" onClick={handleMarkReviewed}>
-                完成复习
+              <button className="btn-prev" onClick={() => handleMarkReviewed(0)}>
+                不会
+              </button>
+              <button className="btn-prev" onClick={() => handleMarkReviewed(1)}>
+                模糊
+              </button>
+              <button className="btn-mark" onClick={() => handleMarkReviewed(2)}>
+                会
+              </button>
+              <button className="btn-mark" onClick={() => handleMarkReviewed(3)}>
+                熟练
               </button>
               <button
                 className="btn-next"
@@ -222,6 +268,29 @@ export default function ReviewPage({
       </div>
     </div>
   );
+}
+
+function buildReviewAnalysisText(question: Question): string {
+  const analysis = question.analysis;
+
+  if (!analysis) {
+    return '';
+  }
+
+  return [
+    `难度：${analysis.difficulty}`,
+    analysis.knowledgePoints.length > 0
+      ? `知识点：${analysis.knowledgePoints.join('、')}`
+      : '',
+    analysis.commonMistakes.length > 0
+      ? `易错点：${analysis.commonMistakes.join('、')}`
+      : '',
+    analysis.solutionMethods && analysis.solutionMethods.length > 0
+      ? `推荐方法：${analysis.solutionMethods.join('、')}`
+      : analysis.studyAdvice,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function getDifficultyRank(difficulty?: string, difficultyScore?: number): number {

@@ -24,6 +24,7 @@ import {
   updateQuestionTitleById,
   updateQuestionById,
 } from './services/questionService';
+import { getActiveQuestions, normalizeQuestions } from './services/questionModel';
 import { markQuestionReviewed } from './services/reviewService';
 import { Question } from './types/question';
 import { loadQuestions, saveQuestions } from './utils/questionStorage';
@@ -32,14 +33,41 @@ import './App.css';
 export default function App() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [hasLoadedQuestions, setHasLoadedQuestions] = useState(false);
+  const [syncStatusText, setSyncStatusText] = useState('');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const latestQuestionsRef = useRef<Question[]>([]);
 
-  const addQuestion = useCallback(async (title: string, image: string, category: Subject) => {
-    const imageRef = await persistQuestionImage(image, 'question');
-    const newQuestion = createQuestion(title, imageRef, category);
-    setQuestions((currentQuestions) => [newQuestion, ...currentQuestions]);
-    return newQuestion;
+  const persistQuestionsImmediately = useCallback((questionsToSave: Question[]) => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = undefined;
+    }
+
+    latestQuestionsRef.current = questionsToSave;
+    void saveQuestions(questionsToSave).catch((error) => {
+      console.error('Failed to immediately save questions:', error);
+    });
   }, []);
+
+  const addQuestion = useCallback(
+    async (
+      title: string,
+      image: string,
+      category: Subject,
+      metadata?: Partial<
+        Pick<
+          Question,
+          'grade' | 'questionType' | 'source' | 'notes' | 'errorCause' | 'tags'
+        >
+      >
+    ) => {
+      const imageRef = await persistQuestionImage(image, 'question');
+      const newQuestion = createQuestion(title, imageRef, category, metadata);
+      setQuestions((currentQuestions) => [newQuestion, ...currentQuestions]);
+      return newQuestion;
+    },
+    []
+  );
 
   const updateQuestionTitle = useCallback((id: string, title: string) => {
     setQuestions((currentQuestions) => updateQuestionTitleById(currentQuestions, id, title));
@@ -77,13 +105,17 @@ export default function App() {
   }, []);
 
   const deleteQuestion = useCallback((id: string) => {
-    setQuestions((currentQuestions) => deleteQuestionById(currentQuestions, id));
-  }, []);
+    setQuestions((currentQuestions) => {
+      const nextQuestions = deleteQuestionById(currentQuestions, id);
+      persistQuestionsImmediately(nextQuestions);
+      return nextQuestions;
+    });
+  }, [persistQuestionsImmediately]);
 
-  const reviewQuestion = useCallback((id: string) => {
+  const reviewQuestion = useCallback((id: string, quality: 0 | 1 | 2 | 3 = 2) => {
     setQuestions((currentQuestions) =>
       currentQuestions.map((question) =>
-        question.id === id ? markQuestionReviewed(question) : question
+        question.id === id ? markQuestionReviewed(question, quality) : question
       )
     );
   }, []);
@@ -137,6 +169,25 @@ export default function App() {
     }
   }, []);
 
+  const syncQuestions = useCallback(async () => {
+    if (!window.electronAPI?.syncQuestions) {
+      setSyncStatusText('当前环境不支持同步');
+      return;
+    }
+
+    setSyncStatusText('正在同步...');
+    try {
+      const result = await window.electronAPI.syncQuestions(latestQuestionsRef.current);
+      const remoteQuestions = normalizeQuestions(result.records);
+      setQuestions(remoteQuestions);
+      persistQuestionsImmediately(remoteQuestions);
+      setSyncStatusText(`同步完成：${remoteQuestions.length} 题`);
+    } catch (error) {
+      console.error('Failed to sync questions.', error);
+      setSyncStatusText('同步失败，请检查 VPS 配置');
+    }
+  }, [persistQuestionsImmediately]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -154,12 +205,17 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    latestQuestionsRef.current = questions;
+  }, [questions]);
+
   const debouncedSave = useCallback((questionsToSave: Question[]) => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
     }
 
     saveTimerRef.current = setTimeout(() => {
+      latestQuestionsRef.current = questionsToSave;
       saveQuestions(questionsToSave).catch((error) => {
         console.error('Failed to auto-save questions:', error);
       });
@@ -180,7 +236,22 @@ export default function App() {
     };
   }, [debouncedSave, hasLoadedQuestions, questions]);
 
-  const stats = useMemo(() => getVisibleStats(questions), [questions]);
+  useEffect(() => {
+    return () => {
+      if (!hasLoadedQuestions || !saveTimerRef.current) {
+        return;
+      }
+
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = undefined;
+      void saveQuestions(latestQuestionsRef.current).catch((error) => {
+        console.error('Failed to flush pending questions on shutdown:', error);
+      });
+    };
+  }, [hasLoadedQuestions]);
+
+  const activeQuestions = useMemo(() => getActiveQuestions(questions), [questions]);
+  const stats = useMemo(() => getVisibleStats(activeQuestions), [activeQuestions]);
 
   return (
     <HashRouter
@@ -227,6 +298,12 @@ export default function App() {
                 复习
               </NavLink>
             </nav>
+            <div className="sync-area">
+              <button className="sync-button" onClick={syncQuestions}>
+                同步
+              </button>
+              {syncStatusText && <span className="sync-status">{syncStatusText}</span>}
+            </div>
           </div>
         </header>
 
@@ -260,7 +337,7 @@ export default function App() {
               path="/questions"
               element={
                 <QuestionListPage
-                  questions={questions}
+                  questions={activeQuestions}
                   onDeleteQuestion={deleteQuestion}
                 />
               }
@@ -269,7 +346,7 @@ export default function App() {
               path="/questions/:id"
               element={
                 <QuestionDetailPage
-                  questions={questions}
+                  questions={activeQuestions}
                   onUpdateQuestionTitle={updateQuestionTitle}
                   onUpdateQuestionNotes={updateQuestionNotes}
                   onClearFollowUps={clearQuestionFollowUps}
@@ -288,7 +365,7 @@ export default function App() {
               path="/review"
               element={
                 <ReviewPage
-                  questions={questions}
+                  questions={activeQuestions}
                   onMarkQuestionReviewed={reviewQuestion}
                 />
               }

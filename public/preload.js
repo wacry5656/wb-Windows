@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveQuestions: (questions) => ipcRenderer.invoke('storage:save-questions', questions),
   persistImage: (payload) => ipcRenderer.invoke('storage:persist-image', payload),
   readImageDataUrl: (payload) => ipcRenderer.invoke('storage:read-image-data-url', payload),
+  syncQuestions: (questions) => ipcRenderer.invoke('sync:questions', questions),
 });
