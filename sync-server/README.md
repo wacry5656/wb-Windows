@@ -24,10 +24,11 @@ CREATE USER wrongbook WITH PASSWORD 'replace-password';
 CREATE DATABASE wrongbook OWNER wrongbook;
 ```
 
-Then initialize the table:
+The server creates or migrates its table and indexes automatically on startup.
+Manual initialization is only needed if you want to pre-create the schema:
 
 ```bash
-cd /opt/wrongbook-sync
+cd /opt/wrongbook/sync-server
 npm install --omit=dev
 npm run init-db
 ```
@@ -55,6 +56,6 @@ Content-Type: application/json
 Client configuration:
 
 ```env
-SYNC_API_URL=https://your-domain.example.com/api/sync
-SYNC_TOKEN=
+SYNC_API_URL=https://gf.cook1ek1ng.xyz/api/sync
+SYNC_TOKEN=your-sync-token
 ```

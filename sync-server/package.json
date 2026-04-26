@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "init-db": "node init-db.js"
+    "init-db": "node init-db.js",
+    "test:merge": "node merge.test.js"
   },
   "dependencies": {
     "dotenv": "^17.4.1",

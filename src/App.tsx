@@ -176,12 +176,12 @@ export default function App() {
     }
 
     if (!window.electronAPI?.syncQuestions) {
-      setSyncStatusText('当前环境不支持同步');
+      setSyncStatusText('\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u540c\u6b65');
       return;
     }
 
     setIsSyncing(true);
-    setSyncStatusText('正在同步...');
+    setSyncStatusText('\u6b63\u5728\u540c\u6b65...');
     try {
       const localQuestions = latestQuestionsRef.current;
       const uploadedCount = localQuestions.length;
@@ -190,7 +190,7 @@ export default function App() {
         throw new Error('SYNC_INVALID_RECORDS');
       }
 
-      if (uploadedCount > 0 && localQuestions.length > 0 && result.records.length === 0) {
+      if (uploadedCount > 0 && result.records.length === 0) {
         throw new Error('SYNC_EMPTY_REMOTE');
       }
 
@@ -219,14 +219,14 @@ export default function App() {
 
       setQuestions(remoteQuestions);
       persistQuestionsImmediately(remoteQuestions);
-      setSyncStatusText(`同步完成：${remoteQuestions.length} 题`);
+      setSyncStatusText(`\u540c\u6b65\u5b8c\u6210\uff1a${remoteQuestions.length} \u9898`);
     } catch (error) {
       console.error('Failed to sync questions.', error);
       if (error instanceof Error && error.message === 'SYNC_EMPTY_REMOTE') {
-        setSyncStatusText('同步异常：服务端返回空数据');
+        setSyncStatusText('\u540c\u6b65\u5f02\u5e38\uff1a\u670d\u52a1\u7aef\u8fd4\u56de\u7a7a\u6570\u636e');
         return;
       }
-      setSyncStatusText('同步失败，请检查 VPS 配置');
+      setSyncStatusText('\u540c\u6b65\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 VPS \u914d\u7f6e');
     } finally {
       setIsSyncing(false);
     }
@@ -349,7 +349,7 @@ export default function App() {
                 disabled={isSyncing}
                 aria-busy={isSyncing}
               >
-                {isSyncing ? '同步中' : '同步'}
+                {isSyncing ? '\u6b63\u5728\u540c\u6b65...' : '\u540c\u6b65'}
               </button>
               {syncStatusText && <span className="sync-status">{syncStatusText}</span>}
             </div>

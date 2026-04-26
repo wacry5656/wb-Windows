@@ -1,14 +1,14 @@
-create table if not exists question_records (
-  id text primary key,
-  updated_at_ms bigint not null default 0,
-  deleted boolean not null default false,
-  payload jsonb not null,
-  source_device text,
-  server_updated_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS question_records (
+  id TEXT PRIMARY KEY,
+  updated_at_ms BIGINT NOT NULL DEFAULT 0,
+  deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  payload JSONB NOT NULL,
+  source_device TEXT NOT NULL DEFAULT 'unknown-device',
+  server_updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-create index if not exists idx_question_records_updated_at
-  on question_records(updated_at_ms);
+CREATE INDEX IF NOT EXISTS idx_question_records_updated_at_ms
+ON question_records(updated_at_ms DESC);
 
-create index if not exists idx_question_records_deleted
-  on question_records(deleted);
+CREATE INDEX IF NOT EXISTS idx_question_records_deleted
+ON question_records(deleted);

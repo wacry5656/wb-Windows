@@ -151,7 +151,7 @@ function normalizeQuestion(value: unknown): Question | null {
   );
   const image = resolveLegacyImage(imageRefs, question.image);
 
-  if (!image) {
+  if (!image && !deleted) {
     return null;
   }
 
@@ -206,7 +206,7 @@ function normalizeQuestion(value: unknown): Question | null {
     userAnswer: typeof question.userAnswer === 'string' ? question.userAnswer : '',
     correctAnswer:
       typeof question.correctAnswer === 'string' ? question.correctAnswer : '',
-    image,
+    image: image || '',
     imageRefs,
     category: isSubject(question.category) ? question.category : DEFAULT_SUBJECT,
     grade: typeof question.grade === 'string' ? question.grade.trim() : '',

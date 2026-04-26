@@ -482,92 +482,148 @@ async function materializeRemoteQuestionForLocalStorage(question) {
 }
 
 async function syncQuestionsWithServer(_event, questions) {
+  loadEnvFile();
   const syncApiUrl = process.env.SYNC_API_URL?.trim();
   const syncToken = process.env.SYNC_TOKEN?.trim();
   const deviceId = process.env.SYNC_DEVICE_ID?.trim() || `windows-${require('os').hostname()}`;
 
   if (!syncApiUrl) {
+    appendMainProcessLog('sync:error', {
+      message: 'SYNC_API_URL_NOT_CONFIGURED',
+      deviceId,
+      uploadedCount: Array.isArray(questions) ? questions.length : 0,
+    });
     throw new Error('SYNC_API_URL_NOT_CONFIGURED');
   }
 
   if (!syncToken) {
+    appendMainProcessLog('sync:error', {
+      message: 'SYNC_TOKEN_NOT_CONFIGURED',
+      url: syncApiUrl,
+      deviceId,
+      uploadedCount: Array.isArray(questions) ? questions.length : 0,
+    });
     throw new Error('SYNC_TOKEN_NOT_CONFIGURED');
   }
 
   const nextQuestions = Array.isArray(questions) ? questions : [];
   const records = await Promise.all(nextQuestions.map(materializeQuestionForSync));
+  const uploadedCount = records.length;
 
   appendMainProcessLog('sync:start', {
-    deviceId,
-    count: records.length,
     url: syncApiUrl,
+    deviceId,
+    uploadedCount,
   });
 
-  const response = await fetchWithTimeout(
-    syncApiUrl,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${syncToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        deviceId,
-        records,
-      }),
-    },
-    120000
-  );
-
-  const responseText = await response.text();
-  let responseJson = null;
   try {
-    responseJson = JSON.parse(responseText);
-  } catch (_error) {
-    responseJson = null;
-  }
+    const response = await fetchWithTimeout(
+      syncApiUrl,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${syncToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deviceId,
+          records,
+        }),
+      },
+      120000
+    );
 
-  if (!response.ok) {
-    const error = new Error('SYNC_REQUEST_FAILED');
-    error.status = response.status;
-    error.details = responseJson ?? responseText;
-    appendMainProcessLog('sync:error', {
-      status: response.status,
-      details: responseJson ?? responseText,
+    const responseText = await response.text();
+    let responseJson = null;
+    try {
+      responseJson = JSON.parse(responseText);
+    } catch (_error) {
+      responseJson = null;
+    }
+
+    if (!response.ok) {
+      const error = new Error('SYNC_REQUEST_FAILED');
+      error.status = response.status;
+      error.details = responseJson ?? responseText;
+      appendMainProcessLog('sync:error', {
+        url: syncApiUrl,
+        deviceId,
+        uploadedCount,
+        status: response.status,
+        details: responseJson ?? responseText,
+      });
+      throw error;
+    }
+
+    if (!responseJson || !Object.prototype.hasOwnProperty.call(responseJson, 'records')) {
+      appendMainProcessLog('sync:error', {
+        url: syncApiUrl,
+        deviceId,
+        uploadedCount,
+        message: 'SYNC_INVALID_RESPONSE',
+        details: responseJson ?? responseText,
+      });
+      throw new Error('SYNC_INVALID_RESPONSE');
+    }
+
+    if (!Array.isArray(responseJson.records)) {
+      appendMainProcessLog('sync:error', {
+        url: syncApiUrl,
+        deviceId,
+        uploadedCount,
+        message: 'SYNC_INVALID_RECORDS',
+        details: responseJson.records,
+      });
+      throw new Error('SYNC_INVALID_RECORDS');
+    }
+
+    if (uploadedCount > 0 && responseJson.records.length === 0) {
+      appendMainProcessLog('sync:error', {
+        url: syncApiUrl,
+        deviceId,
+        uploadedCount,
+        receivedCount: 0,
+        message: 'SYNC_EMPTY_REMOTE',
+      });
+      throw new Error('SYNC_EMPTY_REMOTE');
+    }
+
+    const remoteRecords = await Promise.all(
+      responseJson.records.map(materializeRemoteQuestionForLocalStorage)
+    );
+
+    appendMainProcessLog('sync:success', {
+      url: syncApiUrl,
+      deviceId,
+      uploadedCount,
+      receivedCount: remoteRecords.length,
+      serverTime: responseJson?.serverTime,
     });
+
+    return {
+      ok: true,
+      serverTime: responseJson?.serverTime,
+      records: remoteRecords,
+    };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      ![
+        'SYNC_REQUEST_FAILED',
+        'SYNC_INVALID_RESPONSE',
+        'SYNC_INVALID_RECORDS',
+        'SYNC_EMPTY_REMOTE',
+      ].includes(error.message)
+    ) {
+      appendMainProcessLog('sync:error', {
+        url: syncApiUrl,
+        deviceId,
+        uploadedCount,
+        message: error.message,
+      });
+    }
     throw error;
   }
-
-  if (!responseJson || !Object.prototype.hasOwnProperty.call(responseJson, 'records')) {
-    appendMainProcessLog('sync:error', {
-      message: 'SYNC_INVALID_RESPONSE',
-      details: responseJson ?? responseText,
-    });
-    throw new Error('SYNC_INVALID_RESPONSE');
-  }
-
-  if (!Array.isArray(responseJson.records)) {
-    appendMainProcessLog('sync:error', {
-      message: 'SYNC_INVALID_RECORDS',
-      details: responseJson.records,
-    });
-    throw new Error('SYNC_INVALID_RECORDS');
-  }
-
-  const remoteRecords = await Promise.all(
-    responseJson.records.map(materializeRemoteQuestionForLocalStorage)
-  );
-
-  appendMainProcessLog('sync:success', {
-    received: remoteRecords.length,
-    serverTime: responseJson?.serverTime,
-  });
-
-  return {
-    ok: true,
-    serverTime: responseJson?.serverTime,
-    records: remoteRecords,
-  };
 }
 
 const MAX_WRITE_QUEUE_LENGTH = 50;
