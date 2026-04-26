@@ -195,7 +195,6 @@ function computeRecordUpdatedAtMs(payload) {
     payload?.noteImagesUpdatedAt,
     payload?.reviewUpdatedAt,
     payload?.lastReviewedAt,
-    payload?.nextReviewAt,
     payload?.analysisContentUpdatedAt,
     payload?.analysis?.updatedAt,
     payload?.detailedExplanationUpdatedAt,
@@ -328,32 +327,19 @@ function mergeFollowUps(merged, existing, incoming) {
 }
 
 function mergeDeletion(merged, existing, incoming) {
-  const existingDeletedAt = toMillis(existing.deletedAt);
-  const incomingDeletedAt = toMillis(incoming.deletedAt);
-  const existingUpdatedAt = toMillis(existing.updatedAt);
-  const incomingUpdatedAt = toMillis(incoming.updatedAt);
+  if (existing.deleted === true || incoming.deleted === true) {
+    const existingDeleteTime =
+      existing.deleted === true ? maxTime(existing.deletedAt, existing.updatedAt) : 0;
+    const incomingDeleteTime =
+      incoming.deleted === true ? maxTime(incoming.deletedAt, incoming.updatedAt) : 0;
+    const deletedAtMs = Math.max(existingDeleteTime, incomingDeleteTime);
 
-  const incomingDeleteWins =
-    incoming.deleted === true &&
-    incomingDeletedAt > Math.max(existingUpdatedAt, existingDeletedAt);
-  const existingDeleteWins =
-    existing.deleted === true && existingDeletedAt > incomingUpdatedAt;
-
-  if (incomingDeleteWins) {
     merged.deleted = true;
-    merged.deletedAt = toIso(incoming.deletedAt);
-    return;
-  }
-
-  if (existingDeleteWins) {
-    merged.deleted = true;
-    merged.deletedAt = toIso(existing.deletedAt);
-    return;
-  }
-
-  if (existing.deleted === true && incoming.deleted === true) {
-    merged.deleted = true;
-    merged.deletedAt = new Date(Math.max(existingDeletedAt, incomingDeletedAt)).toISOString();
+    if (deletedAtMs > 0) {
+      merged.deletedAt = new Date(deletedAtMs).toISOString();
+    } else {
+      delete merged.deletedAt;
+    }
     return;
   }
 
@@ -361,13 +347,20 @@ function mergeDeletion(merged, existing, incoming) {
   delete merged.deletedAt;
 }
 
+function ensureUpdatedAt(payload) {
+  if (toMillis(payload.updatedAt) > 0) {
+    return;
+  }
+
+  const fallback = computeRecordUpdatedAtMs(payload);
+  if (fallback > 0) {
+    payload.updatedAt = new Date(fallback).toISOString();
+  }
+}
+
 function finalizeMergedPayload(payload) {
   keepLegacyImageFieldsAligned(payload);
-
-  const updatedAtMs = computeRecordUpdatedAtMs(payload);
-  if (updatedAtMs > 0) {
-    payload.updatedAt = new Date(updatedAtMs).toISOString();
-  }
+  ensureUpdatedAt(payload);
 
   payload.syncStatus = 'synced';
   return payload;
