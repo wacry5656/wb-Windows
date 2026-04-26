@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const http = require('http');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const { Pool } = require('pg');
 
 const SCHEMA_SQL = `

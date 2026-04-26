@@ -395,7 +395,22 @@ function areImageRefsEqual(left: ImageRef[], right: ImageRef[]): boolean {
     return false;
   }
 
-  return left.every((ref, index) => JSON.stringify(ref) === JSON.stringify(right[index]));
+  return left.every((ref, index) => isImageRefEqual(ref, right[index]));
+}
+
+function isImageRefEqual(left: ImageRef, right: ImageRef): boolean {
+  if (left.storage !== right.storage) {
+    return false;
+  }
+
+  return (
+    left.id === right.id &&
+    left.kind === right.kind &&
+    left.createdAt === right.createdAt &&
+    left.mimeType === right.mimeType &&
+    left.uri === right.uri &&
+    left.dataUrl === right.dataUrl
+  );
 }
 
 function createQuestionId(): string {
