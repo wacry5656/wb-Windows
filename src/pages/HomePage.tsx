@@ -10,6 +10,8 @@ import { useNavigate } from 'react-router-dom';
 import { DEFAULT_SUBJECT, SUBJECTS, type Subject } from '../constants/subjects';
 import './HomePageV2.css';
 
+const MAX_QUESTION_IMAGE_BYTES = 10 * 1024 * 1024;
+
 interface HomePageProps {
   onAddQuestion: (
     title: string,
@@ -55,6 +57,12 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
 
     if (!isSupportedImage(file)) {
       alert('请上传 JPG、JPEG 或 PNG 格式的图片');
+      clearSelectedImage();
+      return;
+    }
+
+    if (file.size > MAX_QUESTION_IMAGE_BYTES) {
+      alert('图片不能超过 10MB，请压缩后再试');
       clearSelectedImage();
       return;
     }

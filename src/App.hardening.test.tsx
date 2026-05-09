@@ -237,3 +237,37 @@ test('new image writes prefer file-based refs when Electron image persistence is
     })
   );
 });
+
+test('oversized question images are rejected before persistence', async () => {
+  const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => undefined);
+  const persistImage = jest.fn();
+
+  window.electronAPI = {
+    loadQuestions: jest.fn().mockResolvedValue([]),
+    saveQuestions: jest.fn().mockResolvedValue({
+      success: true,
+      storageFilePath: 'data/questions.json',
+    }),
+    getApiConfigStatus: jest.fn(),
+    generateQuestionAnalysis: jest.fn(),
+    generateQuestionExplanation: jest.fn(),
+    generateQuestionHint: jest.fn(),
+    generateFollowUp: jest.fn(),
+    persistImage,
+  };
+
+  const { container } = render(<App />);
+  await waitFor(() => {
+    expect(window.electronAPI?.loadQuestions).toHaveBeenCalledTimes(1);
+  });
+
+  const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+  const file = new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'too-large.png', {
+    type: 'image/png',
+  });
+
+  fireEvent.change(fileInput, { target: { files: [file] } });
+
+  expect(alertSpy).toHaveBeenCalledWith('图片不能超过 10MB，请压缩后再试');
+  expect(persistImage).not.toHaveBeenCalled();
+});

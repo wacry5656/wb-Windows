@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Question, ReviewQuality } from '../types/question';
+import { isQuestionDueForReview } from '../services/questionModel';
 import './ReviewPageV2.css';
 
 interface ReviewPageProps {
@@ -21,9 +22,22 @@ export default function ReviewPage({
 }: ReviewPageProps) {
   const [sortBy, setSortBy] = useState<SortType>('leastReviewed');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [showAllQuestions, setShowAllQuestions] = useState(false);
+
+  const reviewQuestions = useMemo(
+    () =>
+      showAllQuestions
+        ? questions
+        : questions.filter((question) => isQuestionDueForReview(question)),
+    [questions, showAllQuestions]
+  );
+  const dueReviewCount = useMemo(
+    () => questions.filter((question) => isQuestionDueForReview(question)).length,
+    [questions]
+  );
 
   const sortedQuestions = useMemo(() => {
-    const sorted = [...questions];
+    const sorted = [...reviewQuestions];
     switch (sortBy) {
       case 'recent':
         return sorted.sort(
@@ -56,7 +70,7 @@ export default function ReviewPage({
       default:
         return sorted;
     }
-  }, [questions, sortBy]);
+  }, [reviewQuestions, sortBy]);
 
   useEffect(() => {
     if (currentIndex > sortedQuestions.length - 1) {
@@ -70,6 +84,31 @@ export default function ReviewPage({
         <div className="review-empty">
           <div className="empty-icon">📘</div>
           <p className="empty-text">还没有错题，去添加第一道吧</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (sortedQuestions.length === 0) {
+    return (
+      <div className="review-page">
+        <div className="review-header">
+          <h1 className="review-title">复习模式</h1>
+          <p className="review-subtitle">今日没有需要复习的题目</p>
+        </div>
+        <div className="review-empty">
+          <div className="empty-icon">📘</div>
+          <p className="empty-text">到期题目已清空，也可以切换到全部题目回顾。</p>
+          <button
+            type="button"
+            className="btn-mark"
+            onClick={() => {
+              setShowAllQuestions(true);
+              setCurrentIndex(0);
+            }}
+          >
+            查看全部题目
+          </button>
         </div>
       </div>
     );
@@ -111,7 +150,7 @@ export default function ReviewPage({
       <div className="review-header">
         <h1 className="review-title">复习模式</h1>
         <p className="review-subtitle">
-          第 {currentIndex + 1} / {sortedQuestions.length} 题
+          今日待复习 {dueReviewCount} 题，当前第 {currentIndex + 1} / {sortedQuestions.length} 题
         </p>
       </div>
 
@@ -134,6 +173,17 @@ export default function ReviewPage({
               <option value="category">按学科</option>
               <option value="difficulty">按难度</option>
             </select>
+            <label className="sort-toggle">
+              <input
+                type="checkbox"
+                checked={showAllQuestions}
+                onChange={(event) => {
+                  setShowAllQuestions(event.target.checked);
+                  setCurrentIndex(0);
+                }}
+              />
+              全部题目
+            </label>
           </div>
 
           <div className="question-list-review">

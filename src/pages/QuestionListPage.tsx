@@ -1,5 +1,7 @@
 import { useMemo, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isQuestionDueForReview } from '../services/questionModel';
+import { isQuestionAiContentStale } from '../services/questionService';
 import { Question } from '../types/question';
 import './QuestionListPageV2.css';
 
@@ -8,12 +10,17 @@ interface QuestionListPageProps {
   onDeleteQuestion: (id: string) => void;
 }
 
+type StatusFilter = 'all' | 'due' | 'weak' | 'unanalyzed' | 'staleAi' | 'noted';
+type SortOrder = 'updated' | 'due' | 'mastery' | 'difficulty' | 'created';
+
 export default function QuestionListPage({
   questions,
   onDeleteQuestion,
 }: QuestionListPageProps) {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('updated');
   const [searchTerm, setSearchTerm] = useState('');
   const [zoomedImage, setZoomedImage] = useState<{
     src: string;
@@ -27,29 +34,46 @@ export default function QuestionListPage({
 
   const filteredQuestions = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
-    return questions.filter((question) => {
-      const matchesCategory = filter === 'all' || question.category === filter;
-      const searchableText = [
-        question.title,
-        question.notes,
-        question.grade,
-        question.questionType,
-        question.source,
-        question.errorCause,
-        ...question.tags,
-        ...(question.analysis?.knowledgePoints || []),
-        ...(question.analysis?.commonMistakes || []),
-        ...(question.analysis?.cautions || []),
-        ...(question.analysis?.solutionMethods || []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      const matchesSearch =
-        !normalizedSearch || searchableText.includes(normalizedSearch);
-      return matchesCategory && matchesSearch;
-    });
-  }, [questions, filter, searchTerm]);
+    return questions
+      .filter((question) => {
+        const matchesCategory =
+          categoryFilter === 'all' || question.category === categoryFilter;
+        const matchesStatus = matchesQuestionStatus(question, statusFilter);
+        const searchableText = [
+          question.title,
+          question.notes,
+          question.grade,
+          question.questionType,
+          question.source,
+          question.errorCause,
+          ...question.tags,
+          ...(question.analysis?.knowledgePoints || []),
+          ...(question.analysis?.commonMistakes || []),
+          ...(question.analysis?.cautions || []),
+          ...(question.analysis?.solutionMethods || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        const matchesSearch =
+          !normalizedSearch || searchableText.includes(normalizedSearch);
+        return matchesCategory && matchesStatus && matchesSearch;
+      })
+      .sort((left, right) => compareQuestions(left, right, sortOrder));
+  }, [questions, categoryFilter, statusFilter, searchTerm, sortOrder]);
+
+  const quickCounts = useMemo(
+    () => ({
+      due: questions.filter((question) => isQuestionDueForReview(question)).length,
+      weak: questions.filter((question) => question.masteryLevel <= 2).length,
+      unanalyzed: questions.filter((question) => !question.analysis).length,
+      staleAi: questions.filter(isQuestionAiContentStale).length,
+      noted: questions.filter(
+        (question) => question.notes.trim() || question.noteImageRefs.length > 0
+      ).length,
+    }),
+    [questions]
+  );
 
   const handleDeleteClick = (e: MouseEvent, id: string) => {
     e.stopPropagation();
@@ -106,21 +130,76 @@ export default function QuestionListPage({
 
         <div className="filter-box">
           <button
-            className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
+            className={`filter-btn ${categoryFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setCategoryFilter('all')}
           >
             全部
           </button>
           {categories.map((cat) => (
             <button
               key={cat}
-              className={`filter-btn ${filter === cat ? 'active' : ''}`}
-              onClick={() => setFilter(cat)}
+              className={`filter-btn ${categoryFilter === cat ? 'active' : ''}`}
+              onClick={() => setCategoryFilter(cat)}
             >
               {cat}
             </button>
           ))}
         </div>
+
+        <div className="filter-box filter-box--status" aria-label="状态筛选">
+          <QuickFilterButton
+            label="待复习"
+            count={quickCounts.due}
+            active={statusFilter === 'due'}
+            onClick={() => setStatusFilter((current) => current === 'due' ? 'all' : 'due')}
+          />
+          <QuickFilterButton
+            label="薄弱"
+            count={quickCounts.weak}
+            active={statusFilter === 'weak'}
+            onClick={() => setStatusFilter((current) => current === 'weak' ? 'all' : 'weak')}
+          />
+          <QuickFilterButton
+            label="待分析"
+            count={quickCounts.unanalyzed}
+            active={statusFilter === 'unanalyzed'}
+            onClick={() =>
+              setStatusFilter((current) =>
+                current === 'unanalyzed' ? 'all' : 'unanalyzed'
+              )
+            }
+          />
+          <QuickFilterButton
+            label="AI 需更新"
+            count={quickCounts.staleAi}
+            active={statusFilter === 'staleAi'}
+            onClick={() =>
+              setStatusFilter((current) => current === 'staleAi' ? 'all' : 'staleAi')
+            }
+          />
+          <QuickFilterButton
+            label="有笔记"
+            count={quickCounts.noted}
+            active={statusFilter === 'noted'}
+            onClick={() =>
+              setStatusFilter((current) => current === 'noted' ? 'all' : 'noted')
+            }
+          />
+        </div>
+
+        <label className="sort-inline">
+          <span>排序</span>
+          <select
+            value={sortOrder}
+            onChange={(event) => setSortOrder(event.target.value as SortOrder)}
+          >
+            <option value="updated">最近更新</option>
+            <option value="due">待复习优先</option>
+            <option value="mastery">薄弱优先</option>
+            <option value="difficulty">难度优先</option>
+            <option value="created">最近添加</option>
+          </select>
+        </label>
       </div>
 
       <div className="list-summary">
@@ -265,4 +344,85 @@ export default function QuestionListPage({
       )}
     </div>
   );
+}
+
+function QuickFilterButton({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`filter-btn ${active ? 'active' : ''}`}
+      onClick={onClick}
+    >
+      {label} {count}
+    </button>
+  );
+}
+
+function matchesQuestionStatus(question: Question, filter: StatusFilter): boolean {
+  switch (filter) {
+    case 'due':
+      return isQuestionDueForReview(question);
+    case 'weak':
+      return question.masteryLevel <= 2;
+    case 'unanalyzed':
+      return !question.analysis;
+    case 'staleAi':
+      return isQuestionAiContentStale(question);
+    case 'noted':
+      return Boolean(question.notes.trim() || question.noteImageRefs.length > 0);
+    default:
+      return true;
+  }
+}
+
+function compareQuestions(left: Question, right: Question, sortOrder: SortOrder): number {
+  switch (sortOrder) {
+    case 'due':
+      return getTimestamp(left.nextReviewAt) - getTimestamp(right.nextReviewAt);
+    case 'mastery':
+      return left.masteryLevel - right.masteryLevel;
+    case 'difficulty':
+      return getDifficultyRank(right) - getDifficultyRank(left);
+    case 'created':
+      return getTimestamp(right.createdAt) - getTimestamp(left.createdAt);
+    case 'updated':
+    default:
+      return getTimestamp(right.updatedAt) - getTimestamp(left.updatedAt);
+  }
+}
+
+function getTimestamp(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getDifficultyRank(question: Question): number {
+  if (typeof question.analysis?.difficultyScore === 'number') {
+    return question.analysis.difficultyScore;
+  }
+
+  switch (question.analysis?.difficulty) {
+    case '简单':
+      return 1;
+    case '中等':
+      return 3;
+    case '困难':
+      return 5;
+    default:
+      return 0;
+  }
 }

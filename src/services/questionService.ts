@@ -1,9 +1,11 @@
 import { Subject } from '../constants/subjects';
 import { FollowUpMessage, ImageRef, Question, QuestionSyncStatus } from '../types/question';
 import {
+  calculateNextReviewAt,
   createFileImageRef,
   createInlineImageRef,
   getImageRefDisplaySrc,
+  isQuestionDueForReview,
   resolveNextSyncStatus,
 } from './questionModel';
 
@@ -72,7 +74,7 @@ export function createQuestion(
     masteryLevel: 0,
     reviewCount: 0,
     lastReviewedAt: undefined,
-    nextReviewAt: undefined,
+    nextReviewAt: calculateNextReviewAt(timestamp, 0),
     reviewStatus: 'new',
     noteImagesUpdatedAt: undefined,
     reviewUpdatedAt: undefined,
@@ -176,11 +178,22 @@ export function findQuestionById(
   return questions.find((question) => question.id === id);
 }
 
-export function getVisibleStats(questions: Question[]) {
+export function getVisibleStats(
+  questions: Question[],
+  now: string = new Date().toISOString()
+) {
   const analyzedCount = questions.filter((question) => question.analysis).length;
   const reviewedCount = questions.filter((question) => question.reviewCount > 0).length;
   const noteCount = questions.filter(
     (question) => question.notes.trim() || question.noteImageRefs.length > 0
+  ).length;
+  const dueReviewCount = questions.filter((question) =>
+    isQuestionDueForReview(question, now)
+  ).length;
+  const weakCount = questions.filter((question) => question.masteryLevel <= 2).length;
+  const pendingAnalysisCount = questions.filter((question) => !question.analysis).length;
+  const staleAiCount = questions.filter(
+    (question) => isQuestionAiContentStale(question)
   ).length;
 
   return {
@@ -188,7 +201,24 @@ export function getVisibleStats(questions: Question[]) {
     analyzedCount,
     reviewedCount,
     noteCount,
+    dueReviewCount,
+    weakCount,
+    pendingAnalysisCount,
+    staleAiCount,
   };
+}
+
+export function isQuestionAiContentStale(question: Question): boolean {
+  return (
+    (Boolean(question.analysis) &&
+      question.analysisContentUpdatedAt !== question.contentUpdatedAt) ||
+    (Boolean(question.detailedExplanation?.trim()) &&
+      question.explanationContentUpdatedAt !== question.contentUpdatedAt) ||
+    (Boolean(question.hint?.trim()) &&
+      question.hintContentUpdatedAt !== question.contentUpdatedAt) ||
+    (Boolean(question.followUpChats?.length) &&
+      question.followUpContentUpdatedAt !== question.contentUpdatedAt)
+  );
 }
 
 export function applyQuestionUpdates(

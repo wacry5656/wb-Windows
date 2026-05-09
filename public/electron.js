@@ -14,6 +14,7 @@ const DEFAULT_QWEN_BASE_URL =
 const DEFAULT_QWEN_MODEL = 'qwen3.6-plus';
 const DEFAULT_AI_TIMEOUT_MS = 60000;
 const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 // Write queue to prevent concurrent file writes and data corruption
 let writeQueue = Promise.resolve();
 
@@ -318,14 +319,19 @@ async function persistImageToFile(_event, payload) {
     throw new Error('INVALID_IMAGE_DATA');
   }
 
+  validateImageBufferSize(parsed.buffer);
+
   return enqueueWrite(async () => {
     const imagesDirectory = getImagesStorageDirectory();
     await fs.promises.mkdir(imagesDirectory, { recursive: true });
 
     const extension = getImageExtension(parsed.mimeType);
     const imageId = createResourceId(`img-${kind}`);
-    const fileName = `${imageId}.${extension}`;
-    const filePath = path.join(imagesDirectory, fileName);
+    const filePath = getSafeImageStoragePath(
+      imagesDirectory,
+      imageId,
+      extension
+    );
 
     await fs.promises.writeFile(filePath, parsed.buffer);
 
@@ -403,16 +409,22 @@ async function materializeRemoteImageRefForLocalStorage(ref) {
     return ref;
   }
 
+  validateImageBufferSize(parsed.buffer);
+
   return enqueueWrite(async () => {
     const imagesDirectory = getImagesStorageDirectory();
     await fs.promises.mkdir(imagesDirectory, { recursive: true });
 
-    const imageId =
-      typeof ref.id === 'string' && ref.id.trim()
-        ? ref.id.trim()
-        : createResourceId(`img-${ref.kind === 'note' ? 'note' : 'question'}`);
+    const imageId = getSafeImageId(
+      ref.id,
+      `img-${ref.kind === 'note' ? 'note' : 'question'}`
+    );
     const extension = getImageExtension(ref.mimeType || parsed.mimeType);
-    const filePath = path.join(imagesDirectory, `${imageId}.${extension}`);
+    const filePath = getSafeImageStoragePath(
+      imagesDirectory,
+      imageId,
+      extension
+    );
 
     await fs.promises.writeFile(filePath, parsed.buffer);
 
@@ -651,6 +663,43 @@ function parseImageDataUrl(dataUrl) {
     mimeType: match[1],
     buffer: Buffer.from(match[2], 'base64'),
   };
+}
+
+function validateImageBufferSize(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error('IMAGE_TOO_LARGE');
+  }
+}
+
+function getSafeImageId(value, fallbackPrefix) {
+  const candidate = typeof value === 'string' ? value.trim() : '';
+
+  if (
+    candidate &&
+    candidate !== '.' &&
+    candidate !== '..' &&
+    path.basename(candidate) === candidate &&
+    /^[a-zA-Z0-9._-]+$/.test(candidate)
+  ) {
+    return candidate;
+  }
+
+  return createResourceId(fallbackPrefix);
+}
+
+function getSafeImageStoragePath(imagesDirectory, imageId, extension) {
+  const resolvedImagesDirectory = path.resolve(imagesDirectory);
+  const filePath = path.resolve(
+    resolvedImagesDirectory,
+    `${imageId}.${extension}`
+  );
+  const relativePath = path.relative(resolvedImagesDirectory, filePath);
+
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw new Error('INVALID_IMAGE_PATH');
+  }
+
+  return filePath;
 }
 
 function getImageExtension(mimeType) {
@@ -1270,6 +1319,10 @@ async function generateQuestionExplanation(_event, payload) {
             content: [
               '你是一名中国高中理科老师，擅长给学生讲清楚解题过程。',
               '回答必须是自然、完整的简体中文。',
+              '输出必须是纯文本自然段，不要使用 markdown 格式。',
+              '禁止使用标题符号、加粗符号、列表符号、引用符号、代码块或分隔线。',
+              '禁止输出这些装饰字符：###、##、#、**、*、```、>、-、•。',
+              '不要用“一、二、三”或“1. 2. 3.”组织答案，改用自然段承接。',
               '严禁输出英文句子、英文段落或中英夹杂解释。',
               '只有公式、变量、单位、函数名中允许保留必要字母。',
             ].join('\n'),
@@ -1386,7 +1439,12 @@ async function generateQuestionHint(_event, payload) {
         messages: [
           {
             role: 'system',
-            content: '你是一名中国高中理科老师，擅长用简短提示点拨学生继续思考。',
+            content: [
+              '你是一名中国高中理科老师，擅长用简短提示点拨学生继续思考。',
+              '输出必须是纯文本自然段，不要使用 markdown、标题、列表、加粗、引用、代码块或分隔线。',
+              '禁止输出这些装饰字符：###、##、#、**、*、```、>、-、•。',
+              '不要编号，不要项目符号，只用几句连贯中文提示。',
+            ].join('\n'),
           },
           {
             role: 'user',
@@ -1492,13 +1550,15 @@ async function generateFollowUp(_event, payload) {
         '要求：',
         '1. 输出必须是纯文本，不要使用 markdown 格式',
         '2. 不要使用任何特殊符号，包括：###、##、#、**、*、```、>、- 等',
-        '3. 回答要具体，结合题目和之前的详解内容',
-        '4. 语言清晰，适合高中生理解',
-        '5. 不要重复已有的详解内容，针对学生的问题给出有针对性的回答',
-        '6. 全文必须使用简体中文，不允许输出英文句子、英文段落或中英夹杂解释',
-        '7. 只有公式、变量、单位、函数名中允许保留必要字母，除此之外一律用中文',
-        '8. 语气像高中老师当面答疑，具体、耐心，不说空话',
-        '9. 尽量用自然段落表达，不要使用项目符号、加粗符号、代码块或标题装饰',
+        '3. 禁止使用标题、列表、加粗、引用、代码块、分隔线或项目符号',
+        '4. 不要用“一、二、三”或“1. 2. 3.”组织答案，改用自然段承接',
+        '5. 回答要具体，结合题目和之前的详解内容',
+        '6. 语言清晰，适合高中生理解',
+        '7. 不要重复已有的详解内容，针对学生的问题给出有针对性的回答',
+        '8. 全文必须使用简体中文，不允许输出英文句子、英文段落或中英夹杂解释',
+        '9. 只有公式、变量、单位、函数名中允许保留必要字母，除此之外一律用中文',
+        '10. 语气像高中老师当面答疑，具体、耐心，不说空话',
+        '11. 尽量用自然段落表达，不要使用项目符号、加粗符号、代码块或标题装饰',
       ].join('\n'),
     },
   ];

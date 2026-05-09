@@ -20,6 +20,22 @@ export function calculateNextReviewAt(baseDate: string, reviewCount: number): st
   return nextDate.toISOString();
 }
 
+export function isQuestionDueForReview(
+  question: Pick<Question, 'nextReviewAt'>,
+  now: string = new Date().toISOString()
+): boolean {
+  if (!question.nextReviewAt) {
+    return true;
+  }
+
+  const dueTimestamp = new Date(question.nextReviewAt).getTime();
+  const nowTimestamp = new Date(now).getTime();
+
+  return Number.isFinite(dueTimestamp) && Number.isFinite(nowTimestamp)
+    ? dueTimestamp <= nowTimestamp
+    : true;
+}
+
 export function createInlineImageRef(
   dataUrl: string,
   kind: ImageRef['kind'],

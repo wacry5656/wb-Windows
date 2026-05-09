@@ -2,6 +2,7 @@ import {
   createFileImageRef,
   getActiveQuestions,
   getImageRefDisplaySrc,
+  isQuestionDueForReview,
   normalizeQuestions,
 } from './questionModel';
 import { markQuestionReviewed } from './reviewService';
@@ -23,6 +24,7 @@ describe('question lifecycle services', () => {
         syncStatus: 'pending',
         reviewStatus: 'new',
         reviewCount: 0,
+        nextReviewAt: '2026-04-18T00:00:00.000Z',
         notesUpdatedAt: undefined,
         noteImagesUpdatedAt: undefined,
         reviewUpdatedAt: undefined,
@@ -30,6 +32,8 @@ describe('question lifecycle services', () => {
     );
     expect(question.imageRefs).toHaveLength(1);
     expect(question.image).toBe('data:image/png;base64,abc');
+    expect(isQuestionDueForReview(question, '2026-04-17T23:59:59.000Z')).toBe(false);
+    expect(isQuestionDueForReview(question, '2026-04-18T00:00:00.000Z')).toBe(true);
   });
 
   test('normalizeQuestions migrates legacy records into new metadata shape', () => {

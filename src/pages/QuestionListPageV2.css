@@ -49,6 +49,11 @@
   gap: 10px;
 }
 
+.filter-box--status {
+  padding-top: 12px;
+  border-top: 1px solid rgba(31, 41, 51, 0.08);
+}
+
 .filter-btn {
   padding: 10px 14px;
   border-radius: 999px;
@@ -59,6 +64,22 @@
 .filter-btn.active {
   color: #fff9ef;
   background: linear-gradient(135deg, #0b4d3d, #0f766e);
+}
+
+.sort-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.sort-inline select {
+  min-width: 150px;
+  padding: 10px 12px;
+  border: 1px solid rgba(31, 41, 51, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .list-summary {

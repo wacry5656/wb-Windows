@@ -377,6 +377,22 @@ export default function App() {
                 <span className="stat-card__label">复习次数</span>
                 <strong>{stats.reviewedCount}</strong>
               </div>
+              <div className="stat-card">
+                <span className="stat-card__label">今日待复习</span>
+                <strong>{stats.dueReviewCount}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-card__label">薄弱题目</span>
+                <strong>{stats.weakCount}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-card__label">待 AI 分析</span>
+                <strong>{stats.pendingAnalysisCount}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-card__label">AI 需更新</span>
+                <strong>{stats.staleAiCount}</strong>
+              </div>
             </div>
           </section>
 
