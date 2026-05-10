@@ -499,8 +499,12 @@ function normalizeReviewStatus(
   value: unknown,
   reviewCount: number
 ): QuestionReviewStatus {
-  if (value === 'new' || value === 'reviewing') {
-    return value;
+  const normalizedValue = typeof value === 'string' ? value.toLowerCase() : '';
+  if (normalizedValue === 'new') {
+    return 'new';
+  }
+  if (normalizedValue === 'reviewing' || normalizedValue === 'mastered') {
+    return 'reviewing';
   }
 
   return reviewCount > 0 ? 'reviewing' : DEFAULT_REVIEW_STATUS;

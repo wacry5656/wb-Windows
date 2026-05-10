@@ -45,6 +45,12 @@ export default function QuestionDetailPage({
   const { id } = useParams();
   const question = questions.find((item) => item.id === id) ?? null;
 
+  const handleEdit = () => {
+    if (question) {
+      navigate(`/questions/${question.id}/edit`);
+    }
+  };
+
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(question?.title || '');
   const [titleError, setTitleError] = useState<string | null>(null);
@@ -447,18 +453,63 @@ export default function QuestionDetailPage({
                 </span>
                 <span className="btn-icon__text">完成复习</span>
               </button>
-                <button
-                  className="btn-icon btn-delete"
-                  onClick={handleDelete}
-                  title="删除错题"
-                >
-                  <span className="btn-icon__symbol" aria-hidden="true">
-                    ×
-                  </span>
-                  <span className="btn-icon__text">删除</span>
-                </button>
+              <button
+                className="btn-icon"
+                onClick={handleEdit}
+                title="编辑错题"
+                style={{ background: '#f5f6f8', color: '#2c3e50' }}
+              >
+                <span className="btn-icon__symbol" aria-hidden="true">
+                  ✎
+                </span>
+                <span className="btn-icon__text">编辑</span>
+              </button>
+              <button
+                className="btn-icon btn-delete"
+                onClick={handleDelete}
+                title="删除错题"
+              >
+                <span className="btn-icon__symbol" aria-hidden="true">
+                  ×
+                </span>
+                <span className="btn-icon__text">删除</span>
+              </button>
             </div>
           </div>
+
+          <div className="detail-divider" />
+
+          {question.questionText && (
+            <div className="detail-content-panel">
+              <h2 className="section-title">题目内容</h2>
+              <div className="detail-content-text">{renderTextBlocks(question.questionText)}</div>
+            </div>
+          )}
+
+          {(question.userAnswer || question.correctAnswer) && (
+            <div className="detail-content-panel">
+              <h2 className="section-title">答案对比</h2>
+              {question.userAnswer && (
+                <div className="answer-block answer-block--wrong">
+                  <span className="answer-label">我的答案</span>
+                  <div className="answer-text">{renderTextBlocks(question.userAnswer)}</div>
+                </div>
+              )}
+              {question.correctAnswer && (
+                <div className="answer-block answer-block--correct">
+                  <span className="answer-label">正确答案</span>
+                  <div className="answer-text">{renderTextBlocks(question.correctAnswer)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {question.errorCause && (
+            <div className="detail-content-panel">
+              <h2 className="section-title">错误原因</h2>
+              <div className="detail-content-text">{renderTextBlocks(question.errorCause)}</div>
+            </div>
+          )}
 
           <div className="detail-divider" />
 

@@ -16,7 +16,21 @@ interface HomePageProps {
   onAddQuestion: (
     title: string,
     image: string,
-    category: Subject
+    category: Subject,
+    metadata?: Partial<
+      Pick<
+        import('../types/question').Question,
+        | 'grade'
+        | 'questionType'
+        | 'source'
+        | 'questionText'
+        | 'userAnswer'
+        | 'correctAnswer'
+        | 'notes'
+        | 'errorCause'
+        | 'tags'
+      >
+    >
   ) => Promise<{ id: string }>;
 }
 
@@ -29,6 +43,17 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // 新增元数据字段
+  const [grade, setGrade] = useState('');
+  const [questionType, setQuestionType] = useState('');
+  const [source, setSource] = useState('');
+  const [questionText, setQuestionText] = useState('');
+  const [userAnswer, setUserAnswer] = useState('');
+  const [correctAnswer, setCorrectAnswer] = useState('');
+  const [errorCause, setErrorCause] = useState('');
+  const [tagsText, setTagsText] = useState('');
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     return () => {
@@ -91,11 +116,33 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
     }
 
     const imageDataUrl = await readFileAsDataUrl(imageFile);
-    const newQuestion = await onAddQuestion(title, imageDataUrl, subject);
+    const tags = parseTags(tagsText);
+    const newQuestion = await onAddQuestion(title, imageDataUrl, subject, {
+      grade: grade.trim(),
+      questionType: questionType.trim(),
+      source: source.trim(),
+      questionText: questionText.trim(),
+      userAnswer: userAnswer.trim(),
+      correctAnswer: correctAnswer.trim(),
+      errorCause: errorCause.trim(),
+      tags,
+      notes: notes.trim(),
+    });
 
+    // 重置表单
     setTitle('');
     setSubject(DEFAULT_SUBJECT);
     clearSelectedImage();
+    setGrade('');
+    setQuestionType('');
+    setSource('');
+    setQuestionText('');
+    setUserAnswer('');
+    setCorrectAnswer('');
+    setErrorCause('');
+    setTagsText('');
+    setNotes('');
+
     navigate(`/questions/${newQuestion.id}`);
   };
 
@@ -136,7 +183,7 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
 
         <div className="feature-pills">
           <span>拍照录入</span>
-          <span>本地保存</span>
+          <span>完整元数据</span>
           <span>分类整理</span>
           <span>智能讲解</span>
         </div>
@@ -146,7 +193,7 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
         <form className="upload-form" onSubmit={handleSubmit}>
           <div className="section-heading">
             <h3>添加错题</h3>
-            <p>上传题目图片，保存后再补充笔记和讲解。</p>
+            <p>完善题目信息，方便后续搜索、分析和复习。</p>
           </div>
 
           <div
@@ -154,7 +201,7 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
             onMouseDown={handleTitleContainerMouseDown}
           >
             <label htmlFor="title" className="form-label">
-              题目标题
+              题目标题 <span className="required">*</span>
             </label>
             <input
               ref={titleInputRef}
@@ -164,9 +211,6 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
               placeholder="例如：二次函数最值综合题"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              onInput={(event) =>
-                setTitle((event.target as HTMLInputElement).value)
-              }
               autoComplete="off"
               spellCheck={false}
               autoFocus
@@ -193,23 +237,158 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
             </div>
 
             <div className="form-group">
-              <label htmlFor="image" className="form-label">
-                题目图片
+              <label htmlFor="grade" className="form-label">
+                年级
               </label>
-              <div className="image-upload-area">
-                <input
-                  id="image"
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  onChange={handleImageUpload}
-                  className="file-input"
-                />
-                <div className="upload-placeholder">
-                  <div className="upload-icon">📷</div>
-                  <p>点击选择图片</p>
-                  <p className="upload-hint">支持 JPG、PNG 格式</p>
-                </div>
+              <input
+                id="grade"
+                type="text"
+                className="form-input"
+                placeholder="例如：高一"
+                value={grade}
+                onChange={(event) => setGrade(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="questionType" className="form-label">
+                题型
+              </label>
+              <input
+                id="questionType"
+                type="text"
+                className="form-input"
+                placeholder="例如：选择题、解答题"
+                value={questionType}
+                onChange={(event) => setQuestionType(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="source" className="form-label">
+                来源
+              </label>
+              <input
+                id="source"
+                type="text"
+                className="form-input"
+                placeholder="例如：期中考试、模拟卷"
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="questionText" className="form-label">
+              题目内容
+            </label>
+            <textarea
+              id="questionText"
+              className="form-textarea"
+              placeholder="手动输入题干文字，方便搜索和 AI 分析（可选）"
+              value={questionText}
+              onChange={(event) => setQuestionText(event.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label htmlFor="userAnswer" className="form-label">
+                我的答案
+              </label>
+              <textarea
+                id="userAnswer"
+                className="form-textarea"
+                placeholder="记录你当时写下的答案（可选）"
+                value={userAnswer}
+                onChange={(event) => setUserAnswer(event.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="correctAnswer" className="form-label">
+                正确答案
+              </label>
+              <textarea
+                id="correctAnswer"
+                className="form-textarea"
+                placeholder="记录标准答案或参考答案（可选）"
+                value={correctAnswer}
+                onChange={(event) => setCorrectAnswer(event.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label htmlFor="errorCause" className="form-label">
+                错误原因
+              </label>
+              <input
+                id="errorCause"
+                type="text"
+                className="form-input"
+                placeholder="分析做错的原因（可选）"
+                value={errorCause}
+                onChange={(event) => setErrorCause(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="tags" className="form-label">
+                标签
+              </label>
+              <input
+                id="tags"
+                type="text"
+                className="form-input"
+                placeholder="用逗号、顿号分隔多个标签（可选）"
+                value={tagsText}
+                onChange={(event) => setTagsText(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="notes" className="form-label">
+              笔记
+            </label>
+            <textarea
+              id="notes"
+              className="form-textarea"
+              placeholder="记录解题思路、注意事项或老师讲解要点（可选）"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="image" className="form-label">
+              题目图片 <span className="required">*</span>
+            </label>
+            <div className="image-upload-area">
+              <input
+                id="image"
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png"
+                onChange={handleImageUpload}
+                className="file-input"
+              />
+              <div className="upload-placeholder">
+                <div className="upload-icon">📷</div>
+                <p>点击选择图片</p>
+                <p className="upload-hint">支持 JPG、PNG 格式</p>
               </div>
             </div>
           </div>
@@ -254,9 +433,10 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
 
           <ul className="tips-list">
             <li>题目图片会保存在本地，不依赖在线存储。</li>
-            <li>可以补充自己的笔记、草稿图和复习记录。</li>
+            <li>完善题干、答案和错因，能大幅提升 AI 分析准确度。</li>
+            <li>标签和来源方便后续按维度筛选和统计。</li>
             <li>支持生成知识点分析、思路指引和详细讲解。</li>
-            <li>复习页会按次数和状态帮你快速回看。</li>
+            <li>复习页会按掌握度和复习间隔帮你智能推送。</li>
           </ul>
 
           <div className="future-panel">
@@ -322,4 +502,12 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
     reader.readAsDataURL(file);
   });
+}
+
+function parseTags(input: string): string[] {
+  return input
+    .split(/[,，、\n]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .filter((tag, index, arr) => arr.indexOf(tag) === index);
 }

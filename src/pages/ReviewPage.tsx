@@ -6,6 +6,7 @@ import './ReviewPageV2.css';
 interface ReviewPageProps {
   questions: Question[];
   onMarkQuestionReviewed: (id: string, quality?: ReviewQuality) => void;
+  onPostponeQuestion: (id: string) => void;
 }
 
 type SortType =
@@ -19,10 +20,12 @@ type SortType =
 export default function ReviewPage({
   questions,
   onMarkQuestionReviewed,
+  onPostponeQuestion,
 }: ReviewPageProps) {
   const [sortBy, setSortBy] = useState<SortType>('leastReviewed');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAllQuestions, setShowAllQuestions] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
 
   const reviewQuestions = useMemo(
     () =>
@@ -78,6 +81,10 @@ export default function ReviewPage({
     }
   }, [currentIndex, sortedQuestions.length]);
 
+  useEffect(() => {
+    setShowAnswer(false);
+  }, [currentIndex]);
+
   if (questions.length === 0) {
     return (
       <div className="review-page">
@@ -118,6 +125,11 @@ export default function ReviewPage({
 
   const handleMarkReviewed = (quality: ReviewQuality) => {
     onMarkQuestionReviewed(currentQuestion.id, quality);
+    handleNext();
+  };
+
+  const handlePostpone = () => {
+    onPostponeQuestion(currentQuestion.id);
     handleNext();
   };
 
@@ -271,18 +283,63 @@ export default function ReviewPage({
               />
             </div>
 
-            {currentQuestion.notes && (
+            {/* 题目内容 */}
+            {currentQuestion.questionText && (
               <div className="card-notes">
-                <h3 className="notes-title">笔记</h3>
-                <p className="notes-content">{currentQuestion.notes}</p>
+                <h3 className="notes-title">题目内容</h3>
+                <p className="notes-content">{currentQuestion.questionText}</p>
               </div>
             )}
 
-            {currentQuestion.analysis && (
-              <div className="card-notes card-notes--analysis">
-                <h3 className="notes-title">AI 分析</h3>
-                <p className="notes-content">{buildReviewAnalysisText(currentQuestion)}</p>
-              </div>
+            {/* 显示/隐藏答案 */}
+            {!showAnswer && (
+              <button
+                type="button"
+                className="btn-reveal"
+                onClick={() => setShowAnswer(true)}
+              >
+                显示答案与解析
+              </button>
+            )}
+
+            {showAnswer && (
+              <>
+                {currentQuestion.userAnswer && (
+                  <div className="card-notes card-notes--wrong">
+                    <h3 className="notes-title">我的答案</h3>
+                    <p className="notes-content">{currentQuestion.userAnswer}</p>
+                  </div>
+                )}
+
+                {currentQuestion.correctAnswer && (
+                  <div className="card-notes card-notes--correct">
+                    <h3 className="notes-title">正确答案</h3>
+                    <p className="notes-content">{currentQuestion.correctAnswer}</p>
+                  </div>
+                )}
+
+                {currentQuestion.notes && (
+                  <div className="card-notes">
+                    <h3 className="notes-title">笔记</h3>
+                    <p className="notes-content">{currentQuestion.notes}</p>
+                  </div>
+                )}
+
+                {currentQuestion.analysis && (
+                  <div className="card-notes card-notes--analysis">
+                    <h3 className="notes-title">AI 分析</h3>
+                    <p className="notes-content">{buildReviewAnalysisText(currentQuestion)}</p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="btn-hide"
+                  onClick={() => setShowAnswer(false)}
+                >
+                  隐藏答案
+                </button>
+              </>
             )}
 
             <div className="card-actions">
@@ -311,6 +368,16 @@ export default function ReviewPage({
                 disabled={currentIndex === sortedQuestions.length - 1}
               >
                 下一题
+              </button>
+            </div>
+
+            <div className="card-actions-secondary">
+              <button
+                type="button"
+                className="btn-postpone"
+                onClick={handlePostpone}
+              >
+                稍后再看（推迟 24 小时）
               </button>
             </div>
           </div>

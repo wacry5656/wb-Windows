@@ -41,6 +41,23 @@ export function markQuestionReviewed(
   );
 }
 
+export function postponeReview(
+  question: Question,
+  options: ReviewOptions = {}
+): Question {
+  const timestamp = options.now || new Date().toISOString();
+  const postponedAt = new Date(new Date(timestamp).getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+  return applyQuestionUpdates(
+    question,
+    {
+      nextReviewAt: postponedAt,
+      reviewUpdatedAt: timestamp,
+    },
+    { now: timestamp }
+  );
+}
+
 function getNextMasteryLevel(current: number, quality: ReviewQuality): number {
   switch (quality) {
     case 0:

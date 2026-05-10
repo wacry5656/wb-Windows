@@ -41,6 +41,9 @@ export default function QuestionListPage({
         const matchesStatus = matchesQuestionStatus(question, statusFilter);
         const searchableText = [
           question.title,
+          question.questionText,
+          question.userAnswer,
+          question.correctAnswer,
           question.notes,
           question.grade,
           question.questionType,
@@ -122,7 +125,7 @@ export default function QuestionListPage({
           <input
             type="text"
             className="search-input"
-            placeholder="搜索标题、笔记、标签、来源或 AI 分析..."
+            placeholder="搜索标题、题干、答案、笔记、标签、来源或 AI 分析..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />

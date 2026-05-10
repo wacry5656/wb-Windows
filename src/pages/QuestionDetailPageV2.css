@@ -721,3 +721,65 @@
     opacity: 1;
   }
 }
+
+.detail-content-panel {
+  padding: 20px 24px;
+  border-radius: 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--panel-shadow);
+}
+
+.detail-content-panel .section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin-bottom: 12px;
+}
+
+.detail-content-text {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-strong);
+  white-space: pre-wrap;
+}
+
+.answer-block {
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.answer-block--wrong {
+  background: #fdf2f2;
+  border-left: 4px solid #e74c3c;
+}
+
+.answer-block--correct {
+  background: #f0fdf4;
+  border-left: 4px solid #27ae60;
+}
+
+.answer-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.answer-block--wrong .answer-label {
+  color: #c0392b;
+}
+
+.answer-block--correct .answer-label {
+  color: #1e8449;
+}
+
+.answer-text {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-strong);
+  white-space: pre-wrap;
+}

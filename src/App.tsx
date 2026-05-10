@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { Subject } from './constants/subjects';
+import EditQuestionPage from './pages/EditQuestionPage';
 import QuestionDetailPage from './pages/QuestionDetailPage';
 import HomePage from './pages/HomePage';
 import QuestionListPage from './pages/QuestionListPage';
@@ -13,6 +14,7 @@ import {
 } from './services/questionAiService';
 import { persistQuestionImage } from './services/questionImageService';
 import {
+  applyQuestionUpdates,
   createQuestion,
   deleteQuestionById,
   findQuestionById,
@@ -25,7 +27,7 @@ import {
   updateQuestionById,
 } from './services/questionService';
 import { getActiveQuestions, normalizeQuestions } from './services/questionModel';
-import { markQuestionReviewed } from './services/reviewService';
+import { markQuestionReviewed, postponeReview } from './services/reviewService';
 import { Question } from './types/question';
 import { loadQuestions, saveQuestions } from './utils/questionStorage';
 import './App.css';
@@ -58,7 +60,15 @@ export default function App() {
       metadata?: Partial<
         Pick<
           Question,
-          'grade' | 'questionType' | 'source' | 'notes' | 'errorCause' | 'tags'
+          | 'grade'
+          | 'questionType'
+          | 'source'
+          | 'questionText'
+          | 'userAnswer'
+          | 'correctAnswer'
+          | 'notes'
+          | 'errorCause'
+          | 'tags'
         >
       >
     ) => {
@@ -76,6 +86,27 @@ export default function App() {
 
   const updateQuestionNotes = useCallback((id: string, notes: string) => {
     setQuestions((currentQuestions) => updateQuestionNotesById(currentQuestions, id, notes));
+  }, []);
+
+  const updateQuestionContent = useCallback((id: string, updates: Partial<Pick<Question, 'title' | 'category' | 'grade' | 'questionType' | 'source' | 'questionText' | 'userAnswer' | 'correctAnswer' | 'errorCause' | 'tags'>>) => {
+    setQuestions((currentQuestions) =>
+      currentQuestions.map((question) =>
+        question.id === id
+          ? applyQuestionUpdates(question, {
+              ...updates,
+              title: updates.title?.trim() ?? question.title,
+              grade: updates.grade?.trim() ?? question.grade,
+              questionType: updates.questionType?.trim() ?? question.questionType,
+              source: updates.source?.trim() ?? question.source,
+              questionText: updates.questionText?.trim() ?? question.questionText,
+              userAnswer: updates.userAnswer?.trim() ?? question.userAnswer,
+              correctAnswer: updates.correctAnswer?.trim() ?? question.correctAnswer,
+              errorCause: updates.errorCause?.trim() ?? question.errorCause,
+              tags: updates.tags ?? question.tags,
+            })
+          : question
+      )
+    );
   }, []);
 
   const clearQuestionFollowUps = useCallback((id: string) => {
@@ -117,6 +148,14 @@ export default function App() {
     setQuestions((currentQuestions) =>
       currentQuestions.map((question) =>
         question.id === id ? markQuestionReviewed(question, quality) : question
+      )
+    );
+  }, []);
+
+  const postponeQuestion = useCallback((id: string) => {
+    setQuestions((currentQuestions) =>
+      currentQuestions.map((question) =>
+        question.id === id ? postponeReview(question) : question
       )
     );
   }, []);
@@ -427,11 +466,21 @@ export default function App() {
               }
             />
             <Route
+              path="/questions/:id/edit"
+              element={
+                <EditQuestionPage
+                  questions={activeQuestions}
+                  onUpdateQuestionContent={updateQuestionContent}
+                />
+              }
+            />
+            <Route
               path="/review"
               element={
                 <ReviewPage
                   questions={activeQuestions}
                   onMarkQuestionReviewed={reviewQuestion}
+                  onPostponeQuestion={postponeQuestion}
                 />
               }
             />

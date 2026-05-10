@@ -247,8 +247,80 @@
 
 .btn-prev:disabled,
 .btn-next:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
+}
+
+.btn-reveal,
+.btn-hide {
+  width: 100%;
+  padding: 14px;
+  border-radius: 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s;
+  border: none;
+}
+
+.btn-reveal {
+  color: #fff9ef;
+  background: linear-gradient(135deg, #0b4d3d, #0f766e);
+}
+
+.btn-reveal:hover {
+  background: linear-gradient(135deg, #0a3f32, #0d635c);
+}
+
+.btn-hide {
+  color: var(--text-strong);
+  background: rgba(244, 239, 227, 0.72);
+}
+
+.btn-hide:hover {
+  background: rgba(244, 239, 227, 1);
+}
+
+.card-notes--wrong {
+  background: rgba(231, 76, 60, 0.08);
+  border-left: 4px solid #e74c3c;
+}
+
+.card-notes--wrong .notes-title {
+  color: #c0392b;
+}
+
+.card-notes--correct {
+  background: rgba(39, 174, 96, 0.08);
+  border-left: 4px solid #27ae60;
+}
+
+.card-notes--correct .notes-title {
+  color: #1e8449;
+}
+
+.card-actions-secondary {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.btn-postpone {
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  color: #7f8c8d;
+  background: transparent;
+  border: 1px dashed #dcdcdc;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-postpone:hover {
+  color: #5a6a7a;
+  background: #f5f6f8;
+  border-color: #bdc3c7;
 }
 
 @media (max-width: 1024px) {
