@@ -6,7 +6,7 @@ export function cleanExplanationText(text: string): string {
     return '';
   }
 
-  const normalizedText = text
+  let normalizedText = text
     .replace(/\r\n?/g, '\n')
     .replace(/```[\s\S]*?```/g, '')
     .replace(/```/g, '')
@@ -14,9 +14,27 @@ export function cleanExplanationText(text: string): string {
     .replace(/^\s{0,3}#{1,6}\s*/gm, '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
-    .replace(/\*/g, '')
+    .replace(/(?<!\w)\*(?!\w)/g, '')
     .replace(/^\s*>\s?/gm, '')
     .replace(/[ \t]+\n/g, '\n');
+
+  // Remove Qwen thinking mode output tags and their content
+  const thinkStartTagRegex = new RegExp('<' + 'think>' + '[\\s\\S]*?' + '</' + 'think>', 'g');
+  const thinkingBlockRegex = /<thinking>[\s\S]*?<\/thinking>/g;
+  normalizedText = normalizedText.replace(thinkStartTagRegex, '');
+  normalizedText = normalizedText.replace(thinkingBlockRegex, '');
+
+  // Also handle stray end tags without matching start
+  const thinkEndTag = '</' + 'think>';
+  const thinkingEndTag = '</thinking>';
+  let thinkEndIdx = normalizedText.indexOf(thinkEndTag);
+  if (thinkEndIdx >= 0) {
+    normalizedText = normalizedText.substring(thinkEndIdx + thinkEndTag.length).trim();
+  }
+  let thinkingEndIdx = normalizedText.indexOf(thinkingEndTag);
+  if (thinkingEndIdx >= 0) {
+    normalizedText = normalizedText.substring(thinkingEndIdx + thinkingEndTag.length).trim();
+  }
 
   const cleanedLines = normalizedText
     .split('\n')
