@@ -381,14 +381,14 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
                 id="image"
                 ref={fileInputRef}
                 type="file"
-                accept="image/jpeg,image/png"
+                accept="image/jpeg,image/png,image/webp"
                 onChange={handleImageUpload}
                 className="file-input"
               />
               <div className="upload-placeholder">
                 <div className="upload-icon">📷</div>
                 <p>点击选择图片</p>
-                <p className="upload-hint">支持 JPG、PNG 格式</p>
+                <p className="upload-hint">支持 JPG、PNG、WebP 格式</p>
               </div>
             </div>
           </div>
@@ -480,7 +480,7 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
 }
 
 function isSupportedImage(file: File): boolean {
-  return ['image/jpeg', 'image/png'].includes(file.type);
+  return ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

@@ -9,6 +9,36 @@ import {
   generateQuestionHintRequest,
 } from '../utils/qwenClient';
 
+function cleanChatText(text: string): string {
+  if (!text.trim()) {
+    return '';
+  }
+
+  let cleaned = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/```/g, '')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/^[\s]*[-*][\s]+/gm, '')
+    .replace(/^[ \t]+>/gm, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const unwantedOpenings = [
+    /^(小柒[：:]\s*)/,
+    /^(作为小柒[，,]\s*)/,
+    /^(我[想觉得][，,]?\s*)/,
+  ];
+  for (const pattern of unwantedOpenings) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+
+  return cleaned.trim();
+}
+
 export async function generateAnalysisUpdates(
   question: Question
 ): Promise<Pick<Question, 'analysis' | 'analysisContentUpdatedAt'>> {
@@ -116,7 +146,7 @@ export async function generateFollowUpUpdates(
     question: userMessage,
   });
 
-  const cleanedAnswer = cleanExplanationText(result.answer) || result.answer.trim();
+  const cleanedAnswer = cleanChatText(result.answer) || result.answer.trim();
   const timestamp = new Date().toISOString();
   const newUserMsg = createFollowUpMessage('user', userMessage, timestamp);
   const newAssistantMsg = createFollowUpMessage('assistant', cleanedAnswer, timestamp);

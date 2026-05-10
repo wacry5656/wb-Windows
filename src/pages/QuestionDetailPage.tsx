@@ -1,4 +1,4 @@
-import {
+import React, {
   useEffect,
   useRef,
   useState,
@@ -11,6 +11,14 @@ import './QuestionDetailPageV2.css';
 
 const DEFAULT_AI_TIMEOUT_MS = 60000;
 const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('TIMEOUT')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 interface QuestionDetailPageProps {
   questions: Question[];
@@ -100,6 +108,15 @@ export default function QuestionDetailPage({
     setIsSendingFollowUp(false);
   }, [question?.id]);
 
+  useEffect(() => {
+    if (question?.followUpChats && question.followUpChats.length > 0) {
+      setTimeout(() => {
+        followUpEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 150);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question?.followUpChats?.length]);
+
   if (!question) {
     return (
       <div className="detail-empty">
@@ -163,6 +180,10 @@ export default function QuestionDetailPage({
 
   const handleAiError = (error: unknown, fallbackMessage: string): string => {
     if (error instanceof Error) {
+      if (error.message === 'MISSING_API_KEY') {
+        return '未检测到 API Key，请检查 .env 配置';
+      }
+
       if (error.message === 'TIMEOUT') {
         return '请求超时，请检查网络后重试';
       }
@@ -192,12 +213,7 @@ export default function QuestionDetailPage({
     setAnalysisError(null);
 
     try {
-      await Promise.race([
-        onGenerateAnalysis(question),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), DEFAULT_AI_TIMEOUT_MS)
-        ),
-      ]);
+      await withTimeout(onGenerateAnalysis(question), DEFAULT_AI_TIMEOUT_MS);
     } catch (error) {
       console.error('Failed to generate Qwen analysis.', error);
       setAnalysisError(handleAiError(error, '分析失败，请重试'));
@@ -215,12 +231,7 @@ export default function QuestionDetailPage({
     setHintError(null);
 
     try {
-      await Promise.race([
-        onGenerateHint(question),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), DEFAULT_AI_TIMEOUT_MS)
-        ),
-      ]);
+      await withTimeout(onGenerateHint(question), DEFAULT_AI_TIMEOUT_MS);
     } catch (error) {
       console.error('Failed to generate question hint.', error);
       setHintError(handleAiError(error, '思路指引生成失败，请重试'));
@@ -238,15 +249,7 @@ export default function QuestionDetailPage({
     setDetailedExplanationError(null);
 
     try {
-      await Promise.race([
-        onGenerateDetailedExplanation(question),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('TIMEOUT')),
-            DETAILED_EXPLANATION_TIMEOUT_MS
-          )
-        ),
-      ]);
+      await withTimeout(onGenerateDetailedExplanation(question), DETAILED_EXPLANATION_TIMEOUT_MS);
     } catch (error) {
       console.error('Failed to generate detailed explanation.', error);
       setDetailedExplanationError(handleAiError(error, '详解生成失败，请重试'));
@@ -266,23 +269,22 @@ export default function QuestionDetailPage({
     setFollowUpError(null);
 
     try {
-      await Promise.race([
-        onSendFollowUp(question, nextMessage),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), DEFAULT_AI_TIMEOUT_MS)
-        ),
-      ]);
+      setTimeout(() => {
+        followUpEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+
+      await withTimeout(onSendFollowUp(question, nextMessage), DEFAULT_AI_TIMEOUT_MS);
       setFollowUpInput('');
       setTimeout(() => {
         followUpEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+      }, 200);
     } catch (error) {
       console.error('Failed to send follow-up question.', error);
 
       if (error instanceof Error && error.message === 'MISSING_API_KEY') {
         setFollowUpError('未检测到 API Key，请检查 .env 配置');
       } else {
-        setFollowUpError(handleAiError(error, '追问失败，请重试'));
+        setFollowUpError(handleAiError(error, '发送失败，请重试'));
       }
     } finally {
       setIsSendingFollowUp(false);
@@ -358,6 +360,20 @@ export default function QuestionDetailPage({
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line, index) => <p key={`${index}-${line.slice(0, 16)}`}>{line}</p>);
+
+  const formatChatTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const isToday =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+    const timeStr = date.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return isToday ? timeStr : `${date.getMonth() + 1}/${date.getDate()} ${timeStr}`;
+  };
 
   return (
     <div className="detail-page">
@@ -701,7 +717,7 @@ export default function QuestionDetailPage({
             {question.detailedExplanation && (
               <div className="followup-panel">
                 <div className="followup-panel__header">
-                  <h3 className="followup-panel__title">继续追问</h3>
+                  <h3 className="followup-panel__title">和小柒聊天</h3>
                   {question.followUpChats && question.followUpChats.length > 0 && (
                     <button
                       className="btn-text btn-text--danger"
@@ -714,20 +730,72 @@ export default function QuestionDetailPage({
 
                 {question.followUpChats && question.followUpChats.length > 0 && (
                   <div className="followup-messages">
-                    {question.followUpChats.map((message) => (
-                      <div
-                        key={message.id}
-                        className={`followup-msg followup-msg--${message.role}`}
-                      >
-                        <div className="followup-msg__label">
-                          {message.role === 'user' ? '我' : 'AI 老师'}
-                        </div>
-                        <div className="followup-msg__content">
-                          {renderTextBlocks(message.content)}
+                    {((): React.ReactNode | null => {
+                      return question.followUpChats!.map((message, index) => {
+                        const msgTime = message.createdAt;
+                        const prevMsg = question.followUpChats![index - 1];
+                        const prevTime = prevMsg?.createdAt ?? null;
+                        const showTimestamp =
+                          !prevTime ||
+                          new Date(msgTime).getTime() - new Date(prevTime).getTime() > 300000;
+
+                        const timeElement = showTimestamp ? (
+                          <div className="followup-time-divider">
+                            {formatChatTime(msgTime)}
+                          </div>
+                        ) : null;
+
+                        if (message.role === 'user') {
+                          return (
+                            <React.Fragment key={message.id}>
+                              {timeElement}
+                              <div className="followup-msg followup-msg--user">
+                                <div className="followup-msg__bubble followup-msg__bubble--user">
+                                  <div className="followup-msg__content">
+                                    {renderTextBlocks(message.content)}
+                                  </div>
+                                </div>
+                              </div>
+                            </React.Fragment>
+                          );
+                        }
+
+                        return (
+                          <React.Fragment key={message.id}>
+                            {timeElement}
+                            <div className="followup-msg followup-msg--assistant">
+                              <div className="followup-msg__avatar">柒</div>
+                              <div className="followup-msg__bubble followup-msg__bubble--assistant">
+                                <div className="followup-msg__content">
+                                  {renderTextBlocks(message.content)}
+                                </div>
+                              </div>
+                            </div>
+                          </React.Fragment>
+                        );
+                      });
+                    })()}
+                    {isSendingFollowUp && (
+                      <div className="followup-msg followup-msg--assistant followup-msg--typing">
+                        <div className="followup-msg__avatar">柒</div>
+                        <div className="followup-msg__bubble followup-msg__bubble--assistant">
+                          <div className="followup-typing-indicator">
+                            <span className="followup-typing-dot" />
+                            <span className="followup-typing-dot" />
+                            <span className="followup-typing-dot" />
+                          </div>
                         </div>
                       </div>
-                    ))}
+                    )}
                     <div ref={followUpEndRef} />
+                  </div>
+                )}
+
+                {(!question.followUpChats || question.followUpChats.length === 0) && !isSendingFollowUp && (
+                  <div className="followup-empty">
+                    <div className="followup-empty__icon">💬</div>
+                    <p className="followup-empty__text">和小柒聊聊这道题吧</p>
+                    <p className="followup-empty__hint">随便问，不用太正式</p>
                   </div>
                 )}
 
@@ -741,7 +809,7 @@ export default function QuestionDetailPage({
                   question.followUpChats.length > 0 &&
                   question.followUpContentUpdatedAt !== question.contentUpdatedAt && (
                     <div className="analysis-error" role="status">
-                      题目内容已更新，当前追问上下文可能已过期。
+                      题目内容已更新，聊天上下文可能需要重新开始。
                     </div>
                   )}
 
@@ -750,7 +818,7 @@ export default function QuestionDetailPage({
                     className="followup-textarea"
                     value={followUpInput}
                     onChange={(event) => setFollowUpInput(event.target.value)}
-                    placeholder="有疑问？继续追问这道题。"
+                    placeholder="说点什么..."
                     rows={2}
                     disabled={isSendingFollowUp}
                     onKeyDown={(event) => {
@@ -765,7 +833,7 @@ export default function QuestionDetailPage({
                     onClick={handleSendFollowUp}
                     disabled={isSendingFollowUp || !followUpInput.trim()}
                   >
-                    {isSendingFollowUp ? '思考中...' : '发送'}
+                    {isSendingFollowUp ? '小柒在输入...' : '发送'}
                   </button>
                 </div>
               </div>
