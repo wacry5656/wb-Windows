@@ -27,65 +27,86 @@ export default function ReviewPage({
   const [showAllQuestions, setShowAllQuestions] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
 
-  const reviewQuestions = useMemo(
-    () =>
-      showAllQuestions
-        ? questions
-        : questions.filter((question) => isQuestionDueForReview(question)),
-    [questions, showAllQuestions]
-  );
+  // 计算待复习题目
+  const reviewQuestions = useMemo(() => {
+    if (showAllQuestions) return questions;
+    return questions.filter((q) => isQuestionDueForReview(q));
+  }, [questions, showAllQuestions]);
+
   const dueReviewCount = useMemo(
-    () => questions.filter((question) => isQuestionDueForReview(question)).length,
+    () => questions.filter((q) => isQuestionDueForReview(q)).length,
     [questions]
   );
 
+  // 安全排序：防止 NaN 导致排序异常
   const sortedQuestions = useMemo(() => {
-    const sorted = [...reviewQuestions];
+    const list = [...reviewQuestions];
+    const safeNum = (n: number) => (Number.isFinite(n) ? n : 0);
+
+    const getNextTime = (q: Question): number => {
+      if (!q.nextReviewAt) return 0;
+      const t = new Date(q.nextReviewAt).getTime();
+      return safeNum(t);
+    };
+
+    const getDiff = (q: Question): number => {
+      if (typeof q.analysis?.difficultyScore === 'number' && Number.isFinite(q.analysis.difficultyScore)) {
+        return q.analysis.difficultyScore;
+      }
+      switch (q.analysis?.difficulty) {
+        case '简单':
+          return 1;
+        case '中等':
+          return 2;
+        case '困难':
+          return 3;
+        default:
+          return 0;
+      }
+    };
+
     switch (sortBy) {
       case 'recent':
-        return sorted.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        return list.sort((a, b) => safeNum(new Date(b.createdAt).getTime()) - safeNum(new Date(a.createdAt).getTime()));
       case 'leastReviewed':
-        return sorted.sort((a, b) => {
-          const nextA = a.nextReviewAt ? new Date(a.nextReviewAt).getTime() : 0;
-          const nextB = b.nextReviewAt ? new Date(b.nextReviewAt).getTime() : 0;
-
-          if (nextA !== nextB) {
-            return nextA - nextB;
-          }
-
-          return a.reviewCount - b.reviewCount;
+        return list.sort((a, b) => {
+          const cmp = safeNum(getNextTime(a)) - safeNum(getNextTime(b));
+          if (cmp !== 0) return cmp;
+          return safeNum(a.reviewCount) - safeNum(b.reviewCount);
         });
       case 'mostReviewed':
-        return sorted.sort((a, b) => b.reviewCount - a.reviewCount);
+        return list.sort((a, b) => safeNum(b.reviewCount) - safeNum(a.reviewCount));
       case 'category':
-        return sorted.sort((a, b) => a.category.localeCompare(b.category));
+        return list.sort((a, b) => a.category.localeCompare(b.category));
       case 'difficulty':
-        return sorted.sort(
-          (a, b) =>
-            getDifficultyRank(b.analysis?.difficulty, b.analysis?.difficultyScore) -
-            getDifficultyRank(a.analysis?.difficulty, a.analysis?.difficultyScore)
-        );
+        return list.sort((a, b) => safeNum(getDiff(b)) - safeNum(getDiff(a)));
       case 'weakness':
-        return sorted.sort((a, b) => a.masteryLevel - b.masteryLevel);
+        return list.sort((a, b) => safeNum(a.masteryLevel) - safeNum(b.masteryLevel));
       default:
-        return sorted;
+        return list;
     }
   }, [reviewQuestions, sortBy]);
 
-  useEffect(() => {
-    if (currentIndex > sortedQuestions.length - 1) {
-      setCurrentIndex(Math.max(sortedQuestions.length - 1, 0));
-    }
-  }, [currentIndex, sortedQuestions.length]);
+  // 确保 currentIndex 始终有效
+  const safeIndex = Math.min(currentIndex, Math.max(0, sortedQuestions.length - 1));
+  const currentQuestion = sortedQuestions[safeIndex];
 
+  // 当 sortedQuestions 长度变化时，修正索引
+  useEffect(() => {
+    if (currentIndex >= sortedQuestions.length && sortedQuestions.length > 0) {
+      setCurrentIndex(sortedQuestions.length - 1);
+    }
+    setShowAnswer(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortedQuestions.length]);
+
+  // 切换题目时隐藏答案
   useEffect(() => {
     setShowAnswer(false);
-  }, [currentIndex]);
+  }, [safeIndex]);
 
-  if (questions.length === 0) {
+  // 空状态
+  if (!Array.isArray(questions) || questions.length === 0) {
     return (
       <div className="review-page">
         <div className="review-empty">
@@ -121,57 +142,94 @@ export default function ReviewPage({
     );
   }
 
-  const currentQuestion = sortedQuestions[currentIndex];
+  // 安全检查：如果 currentQuestion 仍然不存在，显示加载中
+  if (!currentQuestion) {
+    return (
+      <div className="review-page">
+        <div className="review-empty">
+          <div className="empty-icon">⏳</div>
+          <p className="empty-text">加载中...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleMarkReviewed = (quality: ReviewQuality) => {
     onMarkQuestionReviewed(currentQuestion.id, quality);
-    handleNext();
+    if (safeIndex < sortedQuestions.length - 1) {
+      setCurrentIndex(safeIndex + 1);
+    }
   };
 
   const handlePostpone = () => {
     onPostponeQuestion(currentQuestion.id);
-    handleNext();
+    if (safeIndex < sortedQuestions.length - 1) {
+      setCurrentIndex(safeIndex + 1);
+    }
   };
 
   const handleNext = () => {
-    if (currentIndex < sortedQuestions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+    if (safeIndex < sortedQuestions.length - 1) {
+      setCurrentIndex(safeIndex + 1);
     }
   };
 
   const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
+    if (safeIndex > 0) {
+      setCurrentIndex(safeIndex - 1);
     }
   };
 
   const handleJumpTo = (index: number) => {
-    setCurrentIndex(index);
+    if (index >= 0 && index < sortedQuestions.length) {
+      setCurrentIndex(index);
+    }
   };
 
   const formatDate = (date: string) => {
-    const d = new Date(date);
-    return d.toLocaleDateString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-    });
+    try {
+      return new Date(date).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+    } catch {
+      return '';
+    }
   };
 
   return (
     <div className="review-page">
+      {/* 顶部标题栏 */}
       <div className="review-header">
-        <h1 className="review-title">复习模式</h1>
-        <p className="review-subtitle">
-          今日待复习 {dueReviewCount} 题，当前第 {currentIndex + 1} / {sortedQuestions.length} 题
-        </p>
+        <div className="review-header-left">
+          <h1 className="review-title">复习模式</h1>
+          <p className="review-subtitle">
+            今日待复习 <strong>{dueReviewCount}</strong> 题 · 当前第{' '}
+            <strong>{safeIndex + 1}</strong> / {sortedQuestions.length} 题
+          </p>
+        </div>
+        <div className="review-header-right">
+          <div className="progress-ring">
+            <svg viewBox="0 0 36 36" className="progress-ring-svg">
+              <path
+                className="progress-ring-bg"
+                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+              <path
+                className="progress-ring-fill"
+                strokeDasharray={`${((safeIndex + 1) / sortedQuestions.length) * 100}, 100`}
+                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+            </svg>
+            <span className="progress-ring-text">{Math.round(((safeIndex + 1) / sortedQuestions.length) * 100)}%</span>
+          </div>
+        </div>
       </div>
 
       <div className="review-container">
-        <div className="review-left">
-          <div className="sort-controls">
-            <label className="sort-label">排序</label>
+        {/* 左侧导航栏 */}
+        <aside className="review-sidebar">
+          <div className="sidebar-controls">
+            <label className="sidebar-label">排序方式</label>
             <select
-              className="sort-select"
+              className="sidebar-select"
               value={sortBy}
               onChange={(e) => {
                 setSortBy(e.target.value as SortType);
@@ -180,155 +238,206 @@ export default function ReviewPage({
             >
               <option value="leastReviewed">待复习优先</option>
               <option value="weakness">薄弱优先</option>
-              <option value="mostReviewed">复习次数由多到少</option>
+              <option value="mostReviewed">复习次数多→少</option>
               <option value="recent">最近添加</option>
               <option value="category">按学科</option>
               <option value="difficulty">按难度</option>
             </select>
-            <label className="sort-toggle">
+            <label className="sidebar-toggle">
               <input
                 type="checkbox"
                 checked={showAllQuestions}
-                onChange={(event) => {
-                  setShowAllQuestions(event.target.checked);
+                onChange={(e) => {
+                  setShowAllQuestions(e.target.checked);
                   setCurrentIndex(0);
                 }}
               />
-              全部题目
+              <span>显示全部题目</span>
             </label>
           </div>
 
-          <div className="question-list-review">
-            {sortedQuestions.map((q, index) => (
-              <div
+          <div className="sidebar-list">
+            {sortedQuestions.map((q, idx) => (
+              <button
                 key={q.id}
-                className={`review-item ${index === currentIndex ? 'active' : ''}`}
-                onClick={() => handleJumpTo(index)}
+                className={`sidebar-item ${idx === safeIndex ? 'active' : ''}`}
+                onClick={() => handleJumpTo(idx)}
               >
-                <span className="item-number">{index + 1}</span>
-                <div className="item-info">
-                  <div className="item-title">{q.title}</div>
-                  <div className="item-meta">
-                    <span className="item-category">{q.category}</span>
-                    <span className="item-reviewed">复习 {q.reviewCount} 次</span>
-                    <span className="item-reviewed">掌握 {q.masteryLevel}/5</span>
-                  </div>
+                <span className="sidebar-num">{idx + 1}</span>
+                <div className="sidebar-info">
+                  <span className="sidebar-title">{q.title}</span>
+                  <span className="sidebar-meta">
+                    {q.category} · 复习{q.reviewCount}次 · 掌握{q.masteryLevel}/5
+                  </span>
                 </div>
-              </div>
+                {isQuestionDueForReview(q) && <span className="sidebar-due" />}
+              </button>
             ))}
           </div>
-        </div>
+        </aside>
 
-        <div className="review-right">
+        {/* 右侧主卡片 */}
+        <main className="review-main">
           <div className="review-card">
-            <div className="card-progress">
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${((currentIndex + 1) / sortedQuestions.length) * 100}%`,
-                  }}
-                ></div>
+            {/* 题目信息头部 */}
+            <div className="card-header">
+              <div className="card-badges">
+                <span className="badge badge-category">{currentQuestion.category}</span>
+                {currentQuestion.grade && (
+                  <span className="badge badge-grade">{currentQuestion.grade}</span>
+                )}
+                {currentQuestion.questionType && (
+                  <span className="badge badge-type">{currentQuestion.questionType}</span>
+                )}
+                {currentQuestion.analysis && (
+                  <span className="badge badge-difficulty">
+                    难度 {currentQuestion.analysis.difficulty}
+                  </span>
+                )}
               </div>
-              <span className="progress-text">
-                {currentIndex + 1} / {sortedQuestions.length}
-              </span>
+              <div className="card-date">
+                <span>{formatDate(currentQuestion.createdAt)}</span>
+                <span>· 复习 {currentQuestion.reviewCount} 次</span>
+                <span>· 掌握度 {currentQuestion.masteryLevel}/5</span>
+              </div>
             </div>
 
-            <div className="card-meta-large">
-              <span className="badge badge-category">{currentQuestion.category}</span>
-              <span className="badge badge-reviewed">
-                复习 {currentQuestion.reviewCount} 次
-              </span>
-              <span className="badge badge-reviewed">
-                掌握度 {currentQuestion.masteryLevel}/5
-              </span>
-              <span className="badge badge-date">
-                {formatDate(currentQuestion.createdAt)}
-              </span>
-              {currentQuestion.grade && (
-                <span className="badge badge-date">{currentQuestion.grade}</span>
-              )}
-              {currentQuestion.questionType && (
-                <span className="badge badge-date">{currentQuestion.questionType}</span>
-              )}
-              {currentQuestion.analysis && (
-                <span className="badge badge-difficulty">
-                  难度 {currentQuestion.analysis.difficulty}
-                </span>
-              )}
-            </div>
+            {/* 标题 */}
+            <h2 className="card-title">{currentQuestion.title}</h2>
 
-            <h2 className="card-title-large">{currentQuestion.title}</h2>
-
-            {(currentQuestion.source ||
-              currentQuestion.tags.length > 0 ||
-              currentQuestion.errorCause) && (
-              <div className="review-extra-meta">
-                {currentQuestion.source && <span>来源：{currentQuestion.source}</span>}
+            {/* 来源/标签/错因 */}
+            {(currentQuestion.source || currentQuestion.tags.length > 0 || currentQuestion.errorCause) && (
+              <div className="card-tags-row">
+                {currentQuestion.source && <span>📚 {currentQuestion.source}</span>}
                 {currentQuestion.tags.length > 0 && (
-                  <span>标签：{currentQuestion.tags.join('、')}</span>
+                  <span>🏷️ {currentQuestion.tags.join(' · ')}</span>
                 )}
                 {currentQuestion.errorCause && (
-                  <span>自评错因：{currentQuestion.errorCause}</span>
+                  <span className="tag-error">❌ {currentQuestion.errorCause}</span>
                 )}
               </div>
             )}
 
-            <div className="card-image-container">
+            {/* 题目图片 */}
+            <div className="card-image-wrap">
               <img
                 src={currentQuestion.image}
                 alt={currentQuestion.title}
-                className="card-image-large"
+                className="card-image"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
               />
             </div>
 
             {/* 题目内容 */}
             {currentQuestion.questionText && (
-              <div className="card-notes">
-                <h3 className="notes-title">题目内容</h3>
-                <p className="notes-content">{currentQuestion.questionText}</p>
+              <div className="card-section">
+                <h3 className="section-label">📝 题目内容</h3>
+                <p className="section-body">{currentQuestion.questionText}</p>
               </div>
             )}
 
-            {/* 显示/隐藏答案 */}
-            {!showAnswer && (
+            {/* 答案区域 */}
+            {!showAnswer ? (
               <button
                 type="button"
                 className="btn-reveal"
                 onClick={() => setShowAnswer(true)}
               >
+                <span className="reveal-icon">👁</span>
                 显示答案与解析
               </button>
-            )}
-
-            {showAnswer && (
-              <>
+            ) : (
+              <div className="answer-panel">
                 {currentQuestion.userAnswer && (
-                  <div className="card-notes card-notes--wrong">
-                    <h3 className="notes-title">我的答案</h3>
-                    <p className="notes-content">{currentQuestion.userAnswer}</p>
+                  <div className="answer-block answer-block--wrong">
+                    <div className="answer-header">
+                      <span className="answer-icon">✗</span>
+                      <span className="answer-label">我的答案</span>
+                    </div>
+                    <p className="answer-body">{currentQuestion.userAnswer}</p>
                   </div>
                 )}
 
                 {currentQuestion.correctAnswer && (
-                  <div className="card-notes card-notes--correct">
-                    <h3 className="notes-title">正确答案</h3>
-                    <p className="notes-content">{currentQuestion.correctAnswer}</p>
+                  <div className="answer-block answer-block--correct">
+                    <div className="answer-header">
+                      <span className="answer-icon">✓</span>
+                      <span className="answer-label">正确答案</span>
+                    </div>
+                    <p className="answer-body">{currentQuestion.correctAnswer}</p>
                   </div>
                 )}
 
                 {currentQuestion.notes && (
-                  <div className="card-notes">
-                    <h3 className="notes-title">笔记</h3>
-                    <p className="notes-content">{currentQuestion.notes}</p>
+                  <div className="answer-block answer-block--notes">
+                    <div className="answer-header">
+                      <span className="answer-icon">📝</span>
+                      <span className="answer-label">我的笔记</span>
+                    </div>
+                    <p className="answer-body">{currentQuestion.notes}</p>
                   </div>
                 )}
 
                 {currentQuestion.analysis && (
-                  <div className="card-notes card-notes--analysis">
-                    <h3 className="notes-title">AI 分析</h3>
-                    <p className="notes-content">{buildReviewAnalysisText(currentQuestion)}</p>
+                  <div className="answer-block answer-block--analysis">
+                    <div className="answer-header">
+                      <span className="answer-icon">🤖</span>
+                      <span className="answer-label">AI 分析</span>
+                    </div>
+                    <div className="analysis-grid">
+                      <div className="analysis-item">
+                        <span className="analysis-key">难度</span>
+                        <span className="analysis-val">
+                          {currentQuestion.analysis.difficulty}
+                          {currentQuestion.analysis.difficultyScore &&
+                            ` (${currentQuestion.analysis.difficultyScore}/5)`}
+                        </span>
+                      </div>
+                      {currentQuestion.analysis.knowledgePoints.length > 0 && (
+                        <div className="analysis-item analysis-item--full">
+                          <span className="analysis-key">知识点</span>
+                          <div className="analysis-tags">
+                            {currentQuestion.analysis.knowledgePoints.map((p) => (
+                              <span key={p} className="analysis-tag">{p}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {currentQuestion.analysis.commonMistakes.length > 0 && (
+                        <div className="analysis-item analysis-item--full">
+                          <span className="analysis-key">易错点</span>
+                          <ul className="analysis-list">
+                            {currentQuestion.analysis.commonMistakes.map((m) => (
+                              <li key={m}>{m}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {currentQuestion.analysis.solutionMethods &&
+                        currentQuestion.analysis.solutionMethods.length > 0 && (
+                        <div className="analysis-item analysis-item--full">
+                          <span className="analysis-key">推荐方法</span>
+                          <ul className="analysis-list">
+                            {currentQuestion.analysis.solutionMethods.map((m) => (
+                              <li key={m}>{m}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {currentQuestion.analysis.cautions &&
+                        currentQuestion.analysis.cautions.length > 0 && (
+                        <div className="analysis-item analysis-item--full">
+                          <span className="analysis-key">注意事项</span>
+                          <ul className="analysis-list">
+                            {currentQuestion.analysis.cautions.map((c) => (
+                              <li key={c}>{c}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -337,95 +446,62 @@ export default function ReviewPage({
                   className="btn-hide"
                   onClick={() => setShowAnswer(false)}
                 >
+                  <span className="reveal-icon">🙈</span>
                   隐藏答案
                 </button>
-              </>
+              </div>
             )}
 
-            <div className="card-actions">
+            {/* 底部导航 */}
+            <div className="card-nav">
               <button
-                className="btn-prev"
+                className="nav-btn nav-btn--secondary"
                 onClick={handlePrevious}
-                disabled={currentIndex === 0}
+                disabled={safeIndex === 0}
               >
-                上一题
-              </button>
-              <button className="btn-prev" onClick={() => handleMarkReviewed(0)}>
-                不会
-              </button>
-              <button className="btn-prev" onClick={() => handleMarkReviewed(1)}>
-                模糊
-              </button>
-              <button className="btn-mark" onClick={() => handleMarkReviewed(2)}>
-                会
-              </button>
-              <button className="btn-mark" onClick={() => handleMarkReviewed(3)}>
-                熟练
+                ← 上一题
               </button>
               <button
-                className="btn-next"
+                className="nav-btn nav-btn--secondary"
                 onClick={handleNext}
-                disabled={currentIndex === sortedQuestions.length - 1}
+                disabled={safeIndex === sortedQuestions.length - 1}
               >
-                下一题
+                下一题 →
               </button>
             </div>
 
-            <div className="card-actions-secondary">
-              <button
-                type="button"
-                className="btn-postpone"
-                onClick={handlePostpone}
-              >
-                稍后再看（推迟 24 小时）
+            {/* 掌握度评分 */}
+            <div className="rating-panel">
+              <p className="rating-title">这道题掌握得怎么样？</p>
+              <div className="rating-buttons">
+                <button className="rating-btn rating-btn--0" onClick={() => handleMarkReviewed(0)}>
+                  <span className="rating-emoji">😵</span>
+                  <span className="rating-text">完全不会</span>
+                </button>
+                <button className="rating-btn rating-btn--1" onClick={() => handleMarkReviewed(1)}>
+                  <span className="rating-emoji">😕</span>
+                  <span className="rating-text">有点模糊</span>
+                </button>
+                <button className="rating-btn rating-btn--2" onClick={() => handleMarkReviewed(2)}>
+                  <span className="rating-emoji">🙂</span>
+                  <span className="rating-text">基本会了</span>
+                </button>
+                <button className="rating-btn rating-btn--3" onClick={() => handleMarkReviewed(3)}>
+                  <span className="rating-emoji">😎</span>
+                  <span className="rating-text">非常熟练</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 推迟复习 */}
+            <div className="postpone-row">
+              <button type="button" className="btn-postpone" onClick={handlePostpone}>
+                ⏰ 暂时跳过，24小时后再复习
               </button>
             </div>
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );
-}
-
-function buildReviewAnalysisText(question: Question): string {
-  const analysis = question.analysis;
-
-  if (!analysis) {
-    return '';
-  }
-
-  return [
-    `难度：${analysis.difficulty}`,
-    analysis.knowledgePoints.length > 0
-      ? `知识点：${analysis.knowledgePoints.join('、')}`
-      : '',
-    analysis.commonMistakes.length > 0
-      ? `易错点：${analysis.commonMistakes.join('、')}`
-      : '',
-    analysis.solutionMethods && analysis.solutionMethods.length > 0
-      ? `推荐方法：${analysis.solutionMethods.join('、')}`
-      : analysis.studyAdvice,
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
-function getDifficultyRank(difficulty?: string, difficultyScore?: number): number {
-  if (typeof difficultyScore === 'number') {
-    return difficultyScore;
-  }
-
-  switch (difficulty) {
-    case '简单':
-    case '\u7B80\u5355':
-      return 1;
-    case '中等':
-    case '\u4E2D\u7B49':
-      return 2;
-    case '困难':
-    case '\u56F0\u96BE':
-      return 3;
-    default:
-      return 0;
-  }
 }
