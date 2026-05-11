@@ -54,6 +54,7 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
   const [errorCause, setErrorCause] = useState('');
   const [tagsText, setTagsText] = useState('');
   const [notes, setNotes] = useState('');
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -110,14 +111,14 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
       return;
     }
 
-    if (!imageFile || !previewUrl) {
-      alert('请上传图片');
+    if ((!imageFile || !previewUrl) && !questionText.trim()) {
+      alert('请添加题目图片或填写题目内容');
       return;
     }
 
-    const imageDataUrl = await readFileAsDataUrl(imageFile);
+    const imageDataUrl = imageFile && previewUrl ? await readFileAsDataUrl(imageFile) : '';
     const tags = parseTags(tagsText);
-    const newQuestion = await onAddQuestion(title, imageDataUrl, subject, {
+    const newQuestion = await onAddQuestion(title, imageDataUrl || '', subject, {
       grade: grade.trim(),
       questionType: questionType.trim(),
       source: source.trim(),
@@ -217,69 +218,22 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
             />
           </div>
 
-          <div className="form-grid">
-            <div className="form-group">
-              <label htmlFor="category" className="form-label">
-                学科
-              </label>
-              <select
-                id="category"
-                className="form-select"
-                value={subject}
-                onChange={(event) => setSubject(event.target.value as Subject)}
-              >
-                {SUBJECTS.map((currentSubject) => (
-                  <option key={currentSubject} value={currentSubject}>
-                    {currentSubject}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="grade" className="form-label">
-                年级
-              </label>
-              <input
-                id="grade"
-                type="text"
-                className="form-input"
-                placeholder="例如：高一"
-                value={grade}
-                onChange={(event) => setGrade(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="questionType" className="form-label">
-                题型
-              </label>
-              <input
-                id="questionType"
-                type="text"
-                className="form-input"
-                placeholder="例如：选择题、解答题"
-                value={questionType}
-                onChange={(event) => setQuestionType(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="source" className="form-label">
-                来源
-              </label>
-              <input
-                id="source"
-                type="text"
-                className="form-input"
-                placeholder="例如：期中考试、模拟卷"
-                value={source}
-                onChange={(event) => setSource(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
+          <div className="form-group">
+            <label htmlFor="category" className="form-label">
+              学科
+            </label>
+            <select
+              id="category"
+              className="form-select"
+              value={subject}
+              onChange={(event) => setSubject(event.target.value as Subject)}
+            >
+              {SUBJECTS.map((currentSubject) => (
+                <option key={currentSubject} value={currentSubject}>
+                  {currentSubject}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="form-group">
@@ -296,66 +250,18 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
             />
           </div>
 
-          <div className="form-grid">
-            <div className="form-group">
-              <label htmlFor="userAnswer" className="form-label">
-                我的答案
-              </label>
-              <textarea
-                id="userAnswer"
-                className="form-textarea"
-                placeholder="记录你当时写下的答案（可选）"
-                value={userAnswer}
-                onChange={(event) => setUserAnswer(event.target.value)}
-                rows={2}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="correctAnswer" className="form-label">
-                正确答案
-              </label>
-              <textarea
-                id="correctAnswer"
-                className="form-textarea"
-                placeholder="记录标准答案或参考答案（可选）"
-                value={correctAnswer}
-                onChange={(event) => setCorrectAnswer(event.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
-
-          <div className="form-grid">
-            <div className="form-group">
-              <label htmlFor="errorCause" className="form-label">
-                错误原因
-              </label>
-              <input
-                id="errorCause"
-                type="text"
-                className="form-input"
-                placeholder="分析做错的原因（可选）"
-                value={errorCause}
-                onChange={(event) => setErrorCause(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="tags" className="form-label">
-                标签
-              </label>
-              <input
-                id="tags"
-                type="text"
-                className="form-input"
-                placeholder="用逗号、顿号分隔多个标签（可选）"
-                value={tagsText}
-                onChange={(event) => setTagsText(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
+          <div className="form-group">
+            <label htmlFor="correctAnswer" className="form-label">
+              正确答案
+            </label>
+            <textarea
+              id="correctAnswer"
+              className="form-textarea"
+              placeholder="记录标准答案或参考答案（可选）"
+              value={correctAnswer}
+              onChange={(event) => setCorrectAnswer(event.target.value)}
+              rows={2}
+            />
           </div>
 
           <div className="form-group">
@@ -372,10 +278,113 @@ export default function HomePage({ onAddQuestion }: HomePageProps) {
             />
           </div>
 
+          <button
+            type="button"
+            className="form-toggle-btn"
+            onClick={() => setShowMoreOptions(!showMoreOptions)}
+          >
+            {showMoreOptions ? '收起更多选项 ▲' : '更多选项（年级、题型等） ▼'}
+          </button>
+
+          {showMoreOptions && (
+            <div className="more-options">
+              <div className="form-grid">
+                <div className="form-group">
+                  <label htmlFor="grade" className="form-label">
+                    年级
+                  </label>
+                  <input
+                    id="grade"
+                    type="text"
+                    className="form-input"
+                    placeholder="例如：高一"
+                    value={grade}
+                    onChange={(event) => setGrade(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="questionType" className="form-label">
+                    题型
+                  </label>
+                  <input
+                    id="questionType"
+                    type="text"
+                    className="form-input"
+                    placeholder="例如：选择题、解答题"
+                    value={questionType}
+                    onChange={(event) => setQuestionType(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="source" className="form-label">
+                    来源
+                  </label>
+                  <input
+                    id="source"
+                    type="text"
+                    className="form-input"
+                    placeholder="例如：期中考试、模拟卷"
+                    value={source}
+                    onChange={(event) => setSource(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="userAnswer" className="form-label">
+                    我的答案
+                  </label>
+                  <textarea
+                    id="userAnswer"
+                    className="form-textarea"
+                    placeholder="记录你当时写下的答案（可选）"
+                    value={userAnswer}
+                    onChange={(event) => setUserAnswer(event.target.value)}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="errorCause" className="form-label">
+                    错误原因
+                  </label>
+                  <input
+                    id="errorCause"
+                    type="text"
+                    className="form-input"
+                    placeholder="分析做错的原因（可选）"
+                    value={errorCause}
+                    onChange={(event) => setErrorCause(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="tags" className="form-label">
+                    标签
+                  </label>
+                  <input
+                    id="tags"
+                    type="text"
+                    className="form-input"
+                    placeholder="用逗号、顿号分隔多个标签（可选）"
+                    value={tagsText}
+                    onChange={(event) => setTagsText(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="form-group">
-            <label htmlFor="image" className="form-label">
-              题目图片 <span className="required">*</span>
-            </label>
+<label htmlFor="image" className="form-label">
+                题目图片
+              </label>
             <div className="image-upload-area">
               <input
                 id="image"
