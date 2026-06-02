@@ -150,7 +150,8 @@ function testNotesMergeIgnoresNewerUpdatedAtWhenNotesTimestampIsOlder() {
   assert.equal(new Date(merged.updatedAt).getTime(), 4000);
 }
 
-function testConservativeDeletePreventsImplicitRestore() {
+function testEditAfterDeleteRestores() {
+  // 删除发生在 2000，对方在 5000 又做了真实编辑 -> 应复活
   const merged = mergeQuestionPayload(
     {
       id: 'q1',
@@ -165,11 +166,32 @@ function testConservativeDeletePreventsImplicitRestore() {
     }
   );
 
+  assert.equal(merged.deleted, false);
+  assert.equal(merged.deletedAt, undefined);
+}
+
+function testStaleAliveCopyDoesNotRestore() {
+  // 删除发生在 3000，对方只是重传一份 1000 的旧副本（未编辑）-> 保持删除
+  const merged = mergeQuestionPayload(
+    {
+      id: 'q1',
+      deleted: true,
+      deletedAt: 3000,
+      updatedAt: 3000,
+    },
+    {
+      id: 'q1',
+      deleted: false,
+      updatedAt: 1000,
+    }
+  );
+
   assert.equal(merged.deleted, true);
-  assert.equal(new Date(merged.deletedAt).getTime(), 2000);
+  assert.equal(new Date(merged.deletedAt).getTime(), 3000);
 }
 
 function testDeletedAtFallsBackToUpdatedAt() {
+  // 删除较新（2500）胜出，且缺少 deletedAt 时回退到 updatedAt
   const merged = mergeQuestionPayload(
     {
       id: 'q1',
@@ -179,7 +201,7 @@ function testDeletedAtFallsBackToUpdatedAt() {
     {
       id: 'q1',
       deleted: false,
-      updatedAt: 5000,
+      updatedAt: 1000,
     }
   );
 
@@ -210,7 +232,8 @@ testFollowUpMerge();
 testDeleteMerge();
 testNextReviewAtDoesNotPolluteUpdatedAt();
 testNotesMergeIgnoresNewerUpdatedAtWhenNotesTimestampIsOlder();
-testConservativeDeletePreventsImplicitRestore();
+testEditAfterDeleteRestores();
+testStaleAliveCopyDoesNotRestore();
 testDeletedAtFallsBackToUpdatedAt();
 testUpdatedAtMs();
 

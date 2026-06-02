@@ -327,24 +327,39 @@ function mergeFollowUps(merged, existing, incoming) {
 }
 
 function mergeDeletion(merged, existing, incoming) {
-  if (existing.deleted === true || incoming.deleted === true) {
-    const existingDeleteTime =
-      existing.deleted === true ? maxTime(existing.deletedAt, existing.updatedAt) : 0;
-    const incomingDeleteTime =
-      incoming.deleted === true ? maxTime(incoming.deletedAt, incoming.updatedAt) : 0;
-    const deletedAtMs = Math.max(existingDeleteTime, incomingDeleteTime);
+  // 以"最近一次操作"决定删除状态：删除晚于对方编辑 -> 保持删除；编辑晚于删除 -> 复活。
+  // 时间戳基于真实的内容/复习变更（同步本身不会刷新 updatedAt），
+  // 因此重传一份未改动的旧副本不会误复活，只有删除之后的真实编辑才会复活。
+  const existingActivity = computeRecordUpdatedAtMs(existing);
+  const incomingActivity = computeRecordUpdatedAtMs(incoming);
 
-    merged.deleted = true;
-    if (deletedAtMs > 0) {
-      merged.deletedAt = new Date(deletedAtMs).toISOString();
-    } else {
-      delete merged.deletedAt;
-    }
+  let deleted;
+  if (existingActivity > incomingActivity) {
+    deleted = existing.deleted === true;
+  } else if (incomingActivity > existingActivity) {
+    deleted = incoming.deleted === true;
+  } else {
+    deleted = existing.deleted === true || incoming.deleted === true;
+  }
+
+  if (!deleted) {
+    merged.deleted = false;
+    delete merged.deletedAt;
     return;
   }
 
-  merged.deleted = false;
-  delete merged.deletedAt;
+  const existingDeleteTime =
+    existing.deleted === true ? maxTime(existing.deletedAt, existing.updatedAt) : 0;
+  const incomingDeleteTime =
+    incoming.deleted === true ? maxTime(incoming.deletedAt, incoming.updatedAt) : 0;
+  const deletedAtMs = Math.max(existingDeleteTime, incomingDeleteTime);
+
+  merged.deleted = true;
+  if (deletedAtMs > 0) {
+    merged.deletedAt = new Date(deletedAtMs).toISOString();
+  } else {
+    delete merged.deletedAt;
+  }
 }
 
 function ensureUpdatedAt(payload) {
@@ -486,6 +501,14 @@ async function handleSync(req, res, pool, syncToken) {
       : 'unknown-device';
   const records = Array.isArray(input.records) ? input.records : [];
 
+  // 删除墓碑保留天数：超过该时长的删除视为已被所有设备同步，物理清理以免无限增长。
+  // 设为 0 可关闭清理（永久保留墓碑）。
+  const retentionDays = Number.parseInt(process.env.TOMBSTONE_RETENTION_DAYS || '30', 10);
+  const tombstoneCutoffMs =
+    Number.isFinite(retentionDays) && retentionDays > 0
+      ? Date.now() - retentionDays * 24 * 60 * 60 * 1000
+      : 0;
+
   const client = await pool.connect();
   try {
     await client.query('begin');
@@ -505,6 +528,16 @@ async function handleSync(req, res, pool, syncToken) {
         ? mergeQuestionPayload(existingPayload, record.payload)
         : finalizeMergedPayload({ ...record.payload, syncStatus: 'synced' });
       const updatedAtMs = computeRecordUpdatedAtMs(mergedPayload);
+
+      // 早已过期的删除墓碑不再写回，避免旧设备重传时复活或堆积
+      if (
+        tombstoneCutoffMs > 0 &&
+        mergedPayload.deleted === true &&
+        updatedAtMs > 0 &&
+        updatedAtMs < tombstoneCutoffMs
+      ) {
+        continue;
+      }
 
       await client.query(
         `
@@ -526,6 +559,14 @@ async function handleSync(req, res, pool, syncToken) {
           JSON.stringify(mergedPayload),
           deviceId,
         ]
+      );
+    }
+
+    // 清理过期的删除墓碑，控制表与同步响应体积
+    if (tombstoneCutoffMs > 0) {
+      await client.query(
+        'delete from question_records where deleted = true and updated_at_ms > 0 and updated_at_ms < $1',
+        [tombstoneCutoffMs]
       );
     }
 
