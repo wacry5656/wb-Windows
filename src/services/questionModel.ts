@@ -166,8 +166,10 @@ function normalizeQuestion(value: unknown): Question | null {
     Array.isArray(question.noteImages) ? question.noteImages : undefined
   );
   const image = resolveLegacyImage(imageRefs, question.image);
+  const questionText =
+    typeof question.questionText === 'string' ? question.questionText : '';
 
-  if (!image && !deleted) {
+  if (!image && !questionText.trim() && !deleted) {
     return null;
   }
 
@@ -217,8 +219,7 @@ function normalizeQuestion(value: unknown): Question | null {
   return {
     id: question.id,
     title: question.title.trim(),
-    questionText:
-      typeof question.questionText === 'string' ? question.questionText : '',
+    questionText,
     userAnswer: typeof question.userAnswer === 'string' ? question.userAnswer : '',
     correctAnswer:
       typeof question.correctAnswer === 'string' ? question.correctAnswer : '',

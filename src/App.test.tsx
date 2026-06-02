@@ -158,7 +158,7 @@ test('uploads an image on the home page and creates a new question', async () =>
     ).toBeInTheDocument();
   });
 
-  const titleInput = screen.getByLabelText('题目标题');
+  const titleInput = screen.getByLabelText(/题目标题/);
   const fileInput = screen.getByLabelText('题目图片');
   const submitButton = screen.getByRole('button', {
     name: '保存错题',
@@ -190,10 +190,10 @@ test('validates required fields before saving a question', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存错题' }));
   expect(alertSpy).toHaveBeenCalledWith('请输入标题');
 
-  fireEvent.change(screen.getByLabelText('题目标题'), {
-    target: { value: '只填标题不上图' },
+  fireEvent.change(screen.getByLabelText(/题目标题/), {
+    target: { value: '只填标题不上图也不填题干' },
   });
   fireEvent.click(screen.getByRole('button', { name: '保存错题' }));
 
-  expect(alertSpy).toHaveBeenLastCalledWith('请上传图片');
+  expect(alertSpy).toHaveBeenLastCalledWith('请添加题目图片或填写题目内容');
 });

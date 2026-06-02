@@ -1134,6 +1134,26 @@ function normalizeAnalysisPayload(payload) {
   };
 }
 
+// 构造发给模型的用户消息内容：有图片时用图文数组，纯文字错题则只发文本
+function buildAiUserContent(image, text) {
+  if (!image) {
+    return text;
+  }
+
+  return [
+    {
+      type: 'image_url',
+      image_url: {
+        url: image,
+      },
+    },
+    {
+      type: 'text',
+      text,
+    },
+  ];
+}
+
 async function generateQuestionAnalysis(_event, payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('INVALID_PAYLOAD');
@@ -1142,10 +1162,6 @@ async function generateQuestionAnalysis(_event, payload) {
   const image = typeof payload.image === 'string' ? payload.image.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
-
-  if (!image) {
-    throw new Error('MISSING_IMAGE');
-  }
 
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
@@ -1194,18 +1210,7 @@ async function generateQuestionAnalysis(_event, payload) {
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image,
-                },
-              },
-              {
-                type: 'text',
-                text: buildAnalysisPrompt(payload),
-              },
-            ],
+            content: buildAiUserContent(image, buildAnalysisPrompt(payload)),
           },
         ],
       }),
@@ -1272,10 +1277,6 @@ async function generateQuestionExplanation(_event, payload) {
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
 
-  if (!image) {
-    throw new Error('MISSING_IMAGE');
-  }
-
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
   if (!apiKey) {
@@ -1329,18 +1330,7 @@ async function generateQuestionExplanation(_event, payload) {
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image,
-                },
-              },
-              {
-                type: 'text',
-                text: buildDetailedExplanationPrompt(payload),
-              },
-            ],
+            content: buildAiUserContent(image, buildDetailedExplanationPrompt(payload)),
           },
         ],
       }),
@@ -1395,10 +1385,6 @@ async function generateQuestionHint(_event, payload) {
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
 
-  if (!image) {
-    throw new Error('MISSING_IMAGE');
-  }
-
   const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
 
   if (!apiKey) {
@@ -1448,18 +1434,10 @@ async function generateQuestionHint(_event, payload) {
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image,
-                },
-              },
-              {
-                type: 'text',
-                text: [buildHintPrompt(), '', `题目标题：${title || '未命名题目'}`, `预估学科：${subject || '未识别学科'}`].join('\n'),
-              },
-            ],
+            content: buildAiUserContent(
+              image,
+              [buildHintPrompt(), '', `题目标题：${title || '未命名题目'}`, `预估学科：${subject || '未识别学科'}`].join('\n')
+            ),
           },
         ],
       }),

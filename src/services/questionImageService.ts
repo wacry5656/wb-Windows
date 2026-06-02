@@ -26,8 +26,9 @@ export async function persistQuestionImage(
 export async function resolveQuestionImageForAi(question: Question): Promise<string> {
   const normalizedImage = question.image.trim();
 
+  // 纯文字错题没有图片，返回空串让 AI 走纯文本提示（与安卓端一致）
   if (!normalizedImage) {
-    throw new Error('MISSING_IMAGE');
+    return '';
   }
 
   if (normalizedImage.startsWith('data:image/')) {

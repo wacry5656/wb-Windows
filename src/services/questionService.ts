@@ -47,7 +47,11 @@ export function createQuestion(
   const metadata = isLegacyOptionsOnly ? {} : metadataOrOptions;
   const mutationOptions = isLegacyOptionsOnly ? metadataOrOptions : options;
   const timestamp = mutationOptions.now || new Date().toISOString();
-  const imageRef = resolveImageInput(image, 'question', timestamp);
+  // 纯文字错题（无图）不生成空的 imageRef，避免污染同步数据
+  const imageRef =
+    typeof image === 'string' && !image.trim()
+      ? null
+      : resolveImageInput(image, 'question', timestamp);
 
   return {
     id: createQuestionId(),
@@ -55,8 +59,8 @@ export function createQuestion(
     questionText: metadata.questionText?.trim() || '',
     userAnswer: metadata.userAnswer?.trim() || '',
     correctAnswer: metadata.correctAnswer?.trim() || '',
-    image: getImageRefDisplaySrc(imageRef),
-    imageRefs: [imageRef],
+    image: imageRef ? getImageRefDisplaySrc(imageRef) : '',
+    imageRefs: imageRef ? [imageRef] : [],
     category,
     grade: metadata.grade?.trim() || '',
     questionType: metadata.questionType?.trim() || '',
