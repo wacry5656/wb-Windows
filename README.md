@@ -9,6 +9,8 @@
 - 📝 **详细笔记**：为每道错题添加解题思路和笔记
 - ♻️ **复习模式**：智能复习系统，支持多种排序方式（最少复习优先、最新添加等）
 - 📊 **学习统计**：跟踪每道题的复习次数
+- 🤖 **AI 辅助**：基于通义千问（Qwen-VL）对题目图片做智能分析、详细讲解、思路提示和多轮追问答疑
+- ☁️ **多设备同步**：通过自建同步服务（VPS + PostgreSQL）在 Windows / Android 之间同步错题与笔记
 
 ## 🚀 快速开始
 
@@ -139,6 +141,11 @@ wrong-question-assistant/
 - **桌面应用**：Electron (latest)
 - **构建工具**：Electron Builder 24.1.1
 - **开发工具**：React Scripts 5.0.1
+- **AI 服务**：通义千问 DashScope（OpenAI 兼容接口，主进程通过 `dotenv` 读取密钥）
+- **同步服务**：`sync-server/`（Node + PostgreSQL，部署在个人 VPS）
+- **配套客户端**：Android 端见 `wacry5656/wb-Android`，与本项目共用同一同步协议
+
+> 说明：`CURRENT_ARCHITECTURE.md` 记录的是当前实现的权威细节，若与本文档有出入以其为准。
 
 ## 📝 使用指南
 
@@ -168,15 +175,19 @@ wrong-question-assistant/
 3. 使用"已掌握，下一题"标记复习进度
 4. 左侧列表可快速跳转
 
-## 🚀 后续扩展
+## 🚀 功能现状与后续扩展
 
-本项目目前不包含以下功能，可在后续版本添加：
+已实现：
 
-- ❌ AI 智能解答（可调用 ChatGPT/Claude API）
-- ❌ 数据库持久化（可集成 SQLite/MongoDB）
-- ❌ 云同步功能（可使用 Firebase 等云服务）
+- ✅ AI 智能分析 / 详解 / 提示 / 追问（通义千问 Qwen-VL）
+- ✅ 本地文件持久化（Electron 主进程写 `data/questions.json` + `data/images/`）
+- ✅ 多设备云同步（自建 `sync-server` + PostgreSQL，Windows / Android 共用）
+
+仍可继续完善：
+
 - ❌ 打印导出功能
-- ❌ 数据统计和分析
+- ❌ 更丰富的数据统计和分析
+- ❌ 增量同步（当前为全量同步，图片以 base64 内联上传）
 
 ## 📄 License
 
