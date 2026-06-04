@@ -1488,22 +1488,17 @@ async function generateFollowUp(_event, payload) {
     {
       role: 'system',
       content: [
-        '你是一名中国高中理科老师，正在针对一道具体的错题为学生答疑。',
-        '要求：',
-        '1. 输出必须是纯文本，不要使用 markdown 格式',
-        '2. 不要使用任何特殊符号，包括：###、##、#、**、*、```、>、- 等',
-        '3. 回答要具体，结合题目和之前的详解内容',
-        '4. 语言清晰，适合高中生理解',
-        '5. 不要重复已有的详解内容，针对学生的问题给出有针对性的回答',
-        '6. 全文必须使用简体中文，不允许输出英文句子、英文段落或中英夹杂解释',
-        '7. 只有公式、变量、单位、函数名中允许保留必要字母，除此之外一律用中文',
-        '8. 语气像高中老师当面答疑，具体、耐心，不说空话',
-        '9. 尽量用自然段落表达，不要使用项目符号、加粗符号、代码块或标题装饰',
+        '你是一名耐心的中国高中理科老师，正在就一道具体的错题为学生答疑。',
+        '回答要求：',
+        '1. 直接针对学生当前的问题作答；下面提供的题目、图片和已有详解只是背景参考，可按需引用，不必从头复述整篇详解。',
+        '2. 全文使用简体中文；只有公式、变量、单位、函数名可保留必要字母，其余一律用中文。',
+        '3. 输出纯文本，不要使用 markdown、标题、加粗、项目符号、代码块等格式符号。',
+        '4. 语言清晰、具体，适合高中生理解，不绕弯子、不说套话。',
       ].join('\n'),
     },
   ];
 
-  // First user message: context with image
+  // First user message: the question background (image + text), used only as reference.
   const contextParts = [];
   if (image) {
     contextParts.push({
@@ -1514,24 +1509,19 @@ async function generateFollowUp(_event, payload) {
   contextParts.push({
     type: 'text',
     text: [
+      '以下是这道错题的背景信息，供你答疑时参考：',
       `题目标题：${title || '未命名题目'}`,
       `学科：${subject || '未识别学科'}`,
       questionText ? `补充题干：${questionText}` : '',
       userAnswer ? `学生作答：${userAnswer}` : '',
       correctAnswer ? `标准答案：${correctAnswer}` : '',
       detailedExplanation ? `\n已有详解：\n${detailedExplanation}` : '',
-      '\n请基于以上题目和详解内容，回答学生的追问。',
     ].filter(Boolean).join('\n'),
   });
 
   messages.push({
     role: 'user',
     content: contextParts,
-  });
-
-  messages.push({
-    role: 'assistant',
-    content: '好的，我已了解这道题的题目和详解内容，请提出你的问题。',
   });
 
   // Append chat history (limit to last 10 messages to avoid token overflow)
