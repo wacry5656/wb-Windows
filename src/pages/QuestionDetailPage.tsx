@@ -717,7 +717,7 @@ export default function QuestionDetailPage({
             {question.detailedExplanation && (
               <div className="followup-panel">
                 <div className="followup-panel__header">
-                  <h3 className="followup-panel__title">和小柒聊天</h3>
+                  <h3 className="followup-panel__title">向老师追问</h3>
                   {question.followUpChats && question.followUpChats.length > 0 && (
                     <button
                       className="btn-text btn-text--danger"
@@ -794,8 +794,8 @@ export default function QuestionDetailPage({
                 {(!question.followUpChats || question.followUpChats.length === 0) && !isSendingFollowUp && (
                   <div className="followup-empty">
                     <div className="followup-empty__icon">💬</div>
-                    <p className="followup-empty__text">和小柒聊聊这道题吧</p>
-                    <p className="followup-empty__hint">随便问，不用太正式</p>
+                    <p className="followup-empty__text">就这道题向老师追问吧</p>
+                    <p className="followup-empty__hint">有不懂的地方都可以问</p>
                   </div>
                 )}
 
@@ -818,7 +818,7 @@ export default function QuestionDetailPage({
                     className="followup-textarea"
                     value={followUpInput}
                     onChange={(event) => setFollowUpInput(event.target.value)}
-                    placeholder="说点什么..."
+                    placeholder="输入你的疑问..."
                     rows={2}
                     disabled={isSendingFollowUp}
                     onKeyDown={(event) => {
@@ -833,7 +833,7 @@ export default function QuestionDetailPage({
                     onClick={handleSendFollowUp}
                     disabled={isSendingFollowUp || !followUpInput.trim()}
                   >
-                    {isSendingFollowUp ? '小柒在输入...' : '发送'}
+                    {isSendingFollowUp ? '老师正在解答...' : '发送'}
                   </button>
                 </div>
               </div>

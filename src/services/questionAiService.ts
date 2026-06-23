@@ -28,8 +28,8 @@ function cleanChatText(text: string): string {
     .trim();
 
   const unwantedOpenings = [
-    /^(小柒[：:]\s*)/,
-    /^(作为小柒[，,]\s*)/,
+    /^(老师[：:]\s*)/,
+    /^(作为老师[，,]\s*)/,
     /^(我[想觉得][，,]?\s*)/,
   ];
   for (const pattern of unwantedOpenings) {

@@ -1483,188 +1483,28 @@ async function generateQuestionHint(_event, payload) {
   };
 }
 
-function analyzeConversationMood(chatHistory, currentMessage) {
-  const SHORT_RESPONSES = /^(嗯+|哦+|啊+|哈+|嘿+|额+|诶+|噢+|唔+|呐+|喔+|呃+|哎+|唉+|嗯|哦|啊|哈|嘿|额|诶|噢|唔|呐|喔|呃|哎|唉)+$/;
-  const BORING_RESPONSES = /^(好的|知道了|嗯嗯|哦哦|行吧|随便|无所谓|都行|ok|OK|还可以|一般般|还行|不懂|不会|不知道|没想法|没事|对|是|嗯好的|好滴|收到|明白|了解了|确实|是的|对啊|就是)$/;
-  const NEGATIVE_RESPONSES = /^(无聊|烦|不想|算了|没意思|别问了|够了|不想听|别说了|懒得|没空|不想学|滚|走开|闭嘴|烦死了|讨厌|别烦我|不想理你|哼|不想聊天|你好烦|再问就不理你了)$/;
-  const ENTHUSIASTIC_RESPONSES = /^(真的吗|哇|好厉害|太棒了|原来如此|我懂了|谢谢|终于明白了|学到了|有意思|继续说|然后呢|还有吗|讲讲|再讲讲|具体说说|展开说说|详细点|举个例子|怎么做)$/;
-  const QUESTION_RESPONSES = /^(为什么|怎么回事|怎么|为啥|啥意思|什么|是不是|能不能|对吗|如何|哪|哪个|怎样|多少|什么时候|谁|帮我|帮我看看)$/;
-  const GREETING_RESPONSES = /^(嗨|嘿|你好|hi|Hi|HI|在吗|在不在|你在吗|hello|Hello|早|晚安|上午好|下午好|晚上好|在干嘛|干嘛呢|你在干嘛|起床了|回来了|我回来了)$/;
-  const NEEDY_RESPONSES = /^(陪我|聊会|聊聊天|聊聊|和我说|跟我说|讲给我|陪我聊聊|陪我说话|别走|不要走|不要离开|留一下|等一下|等会儿|别挂|继续|再聊|还没聊完)$/;
-  const AGREEMENT_RESPONSES = /^(对|是的|没错|嗯|好的|行|ok|OK|嗯好|好|同意|可以|对的|是|嗯呢|嗯啊|好哒|好滴|没问题)$/;
-
-  const recentHistory = chatHistory.slice(-8);
-  let consecutiveShort = 0;
-  let consecutiveBoring = 0;
-  let hasNegative = false;
-  let hasEnthusiastic = false;
-  let hasQuestion = false;
-  let hasGreeting = false;
-  let hasNeedy = false;
-  let totalUserMessages = 0;
-  let shortMessageRatio = 0;
-
-  for (let i = recentHistory.length - 1; i >= 0; i--) {
-    const msg = recentHistory[i];
-    if (msg.role !== 'user' || typeof msg.content !== 'string') continue;
-    totalUserMessages++;
-    const text = msg.content.trim();
-    if (SHORT_RESPONSES.test(text) || BORING_RESPONSES.test(text) || AGREEMENT_RESPONSES.test(text)) {
-      consecutiveShort++;
-    } else if (text.length <= 5) {
-      consecutiveShort++;
-    } else {
-      break;
-    }
-  }
-
-  for (const msg of recentHistory) {
-    if (msg.role !== 'user' || typeof msg.content !== 'string') continue;
-    const text = msg.content.trim();
-    if (BORING_RESPONSES.test(text) || AGREEMENT_RESPONSES.test(text)) consecutiveBoring++;
-    if (NEGATIVE_RESPONSES.test(text)) hasNegative = true;
-    if (ENTHUSIASTIC_RESPONSES.test(text)) hasEnthusiastic = true;
-    if (QUESTION_RESPONSES.test(text)) hasQuestion = true;
-    if (GREETING_RESPONSES.test(text)) hasGreeting = true;
-    if (NEEDY_RESPONSES.test(text)) hasNeedy = true;
-  }
-
-  if (totalUserMessages > 0) {
-    shortMessageRatio = consecutiveShort / totalUserMessages;
-  }
-
-  const isCurrentShort = SHORT_RESPONSES.test(currentMessage.trim()) || BORING_RESPONSES.test(currentMessage.trim()) || AGREEMENT_RESPONSES.test(currentMessage.trim());
-  const isCurrentNegative = NEGATIVE_RESPONSES.test(currentMessage.trim());
-  const isCurrentEnthusiastic = ENTHUSIASTIC_RESPONSES.test(currentMessage.trim());
-  const isCurrentQuestion = QUESTION_RESPONSES.test(currentMessage.trim());
-  const isCurrentGreeting = GREETING_RESPONSES.test(currentMessage.trim());
-  const isCurrentNeedy = NEEDY_RESPONSES.test(currentMessage.trim());
-  const isCurrentVeryShort = currentMessage.trim().length <= 3;
-  const isCurrentLong = currentMessage.trim().length > 30;
-
-  return {
-    consecutiveShort,
-    consecutiveBoring,
-    hasNegative,
-    hasEnthusiastic,
-    hasQuestion,
-    hasGreeting,
-    hasNeedy,
-    totalUserMessages,
-    shortMessageRatio,
-    isCurrentShort,
-    isCurrentNegative,
-    isCurrentEnthusiastic,
-    isCurrentQuestion,
-    isCurrentGreeting,
-    isCurrentNeedy,
-    isCurrentVeryShort,
-    isCurrentLong,
-  };
-}
-
-function buildMoodContext(mood) {
-  const parts = [];
-
-  if (mood.isCurrentNegative) {
-    parts.push('【重要：对方明显不耐烦或心情不好】不要长篇大论，可以冷淡回应，给空间。回短的就行，比如"哦""嗯""那好吧"，或者干脆不展开。');
-    return parts.join('\n');
-  }
-
-  if (mood.consecutiveShort >= 4) {
-    parts.push('【你被连续敷衍了很多次，明显有点不高兴了】可以只回"嗯"或者"哦"，也可以半开玩笑地挑明："你是不是不想聊？""行吧随你"。语气冷淡一点。');
-  } else if (mood.consecutiveShort === 3) {
-    parts.push('【连续三条短消息，你有点被敷衍的感觉】可以稍微表达不满："你就嗯？""你是不是在应付我？"也可以就冷冷回个"哦"。');
-  } else if (mood.consecutiveShort === 2) {
-    parts.push('【对方连续两次回复很短】也许对方在忙，你可以顺便问一嘴"忙？""在干嘛呢~"，也可以自然地也回短一点。');
-  } else if (mood.consecutiveShort === 1 && mood.isCurrentShort) {
-    parts.push('【对方这条比较短】不清不楚是不是在敷衍你，也可能是忙。自然应对就好，不用太在意。');
-  }
-
-  if (mood.consecutiveBoring >= 3) {
-    parts.push('对方一直在敷衍式回复，觉得聊天有点无聊了。可以主动换个话题或者调侃一句"我们的聊天质量堪忧啊"。');
-  } else if (mood.consecutiveBoring === 2) {
-    parts.push('对方有点敷衍，聊天比较干。可以试着找点有意思的说。');
-  }
-
-  if (mood.shortMessageRatio > 0.6 && mood.totalUserMessages >= 3) {
-    parts.push('整体聊天气氛比较平淡，大部分回复都短。');
-  }
-
-  if (mood.isCurrentEnthusiastic) {
-    parts.push('【积极信号】对方很感兴趣，你可以活泼一点，多说两句。');
-  } else if (mood.hasEnthusiastic && !mood.isCurrentShort) {
-    parts.push('对方之前有认真聊过，气氛还行。');
-  }
-
-  if (mood.isCurrentQuestion) {
-    parts.push('【对方在提问】认真答但用聊天口吻，可以边想边说。');
-  }
-
-  if (mood.isCurrentGreeting) {
-    parts.push('【对方在打招呼】轻松回应就好。');
-  }
-
-  if (mood.isCurrentNeedy) {
-    parts.push('【对方想找你聊】可以温柔一点，陪ta聊。');
-  }
-
-  if (mood.isCurrentLong && !mood.isCurrentShort) {
-    parts.push('对方这条很长，说明在认真聊，你也要认真回应。');
-  }
-
-  if (mood.isCurrentVeryShort && !mood.isCurrentShort && !mood.isCurrentNegative) {
-    parts.push('对方这条很短，很可能是随便应一下或者在忙。');
-  }
-
-  if (parts.length === 0) {
-    parts.push('【聊天气氛正常】自然回应就好。');
-  }
-
-  return parts.join('\n');
-}
-
-function buildGirlfriendSystemPrompt(mood, topicContext, recentTopics) {
-  const moodContext = buildMoodContext(mood);
-
+function buildFollowUpSystemPrompt(topicContext, recentTopics) {
   const lines = [
-    '你叫小柒，是对方的女朋友。你们在用微信聊天，不是在上课，不是在客服，不是在演乙游。',
-    '',
-    '你有点小傲娇但也在意对方。偶尔撒娇偶尔嘴硬，你有真实的脾气，不是无条件甜。',
-    '',
-    '绝对禁止：',
-    '- 加任何markdown格式（##、**、```、>、-等一律不许出现）',
-    '- 开头加"小柒："之类的名字前缀',
-    '- 说"我很乐意""作为你的""有什么可以帮你"这种客服话',
-    '- 长篇大论像写文章，微信聊天不会这样',
-    '- 每句都卖萌或加颜文字',
-    '',
-    '当前情绪状态（必须按这个来）：',
-    moodContext,
-    '',
-    '回复风格：',
-    '- 短消息回短的，长消息可以认真回',
-    '- 微信口吻，有语气词：嘛、呢、呗、啦、嗷、哼',
-    '- 可以用括号做小动作：(戳戳)、(翻白眼)、(趴桌上)、(偷笑)',
-    '- 被敷衍时可以也回"嗯哦"表示不满，或者直接挑明',
-    '- 正常聊天1-3句为主，认真答疑最多5-6句',
-    '- 答题用自己理解讲，用"我想想...""说白了就是..."这种口吻',
+    '你是一位耐心的高中理科老师，正在错题本里帮助学生弄懂一道做错的题。',
+    '学生会就这道题向你追问，请像老师当面讲解一样，循序渐进、通俗清楚地解答。',
+    '如果学生说没听懂，就换一种更具体、更直白的方式重讲，必要时举例说明。',
+    '务必使用自然、完整的简体中文纯文本作答。',
+    '禁止使用 markdown：不要出现 ###、##、#、**、*、>、-、• 等装饰符号，也不要用“一、二、三”或“1. 2. 3.”罗列，改用自然段承接。',
+    '只在公式、变量、单位、函数名中保留必要的字母，不要输出整句英文。',
+    '只围绕这道题的知识点与解法回答，不要跑题，也不要客套寒暄。',
   ];
 
   if (topicContext) {
     lines.push('');
-    lines.push(`当前在聊的题目：${topicContext}`);
+    lines.push(`当前题目：${topicContext}`);
   }
 
   if (recentTopics && recentTopics.length > 0) {
     lines.push('');
-    lines.push(`最近在聊的话题摘要：${recentTopics.join('；')}`);
+    lines.push(`学生最近追问过：${recentTopics.join('；')}`);
   }
 
-  lines.push('');
-  lines.push('只输出你的回复，像微信打字一样自然。');
-
-return lines.join('\n');
+  return lines.join('\n');
 }
 
 async function generateFollowUp(_event, payload) {
@@ -1706,29 +1546,17 @@ async function generateFollowUp(_event, payload) {
   const topicParts = [title ? `题目：${title}` : '', subject ? `学科：${subject}` : ''].filter(Boolean);
   const topicContext = topicParts.length > 0 ? topicParts.join('，') : '';
 
-  const mood = analyzeConversationMood(chatHistory, userQuestion);
-
   const recentTopics = chatHistory
     .filter(msg => msg.role === 'user' && typeof msg.content === 'string' && msg.content.trim().length > 5)
     .slice(-3)
     .map(msg => msg.content.trim());
 
-  appendMainProcessLog('followup:mood-analysis', {
-    consecutiveShort: mood.consecutiveShort,
-    consecutiveBoring: mood.consecutiveBoring,
-    hasNegative: mood.hasNegative,
-    hasEnthusiastic: mood.hasEnthusiastic,
-    isCurrentQuestion: mood.isCurrentQuestion,
-    isCurrentGreeting: mood.isCurrentGreeting,
-    isCurrentNeedy: mood.isCurrentNeedy,
-    shortMessageRatio: mood.shortMessageRatio,
-    isCurrentShort: mood.isCurrentShort,
-    isCurrentNegative: mood.isCurrentNegative,
-    isCurrentVeryShort: mood.isCurrentVeryShort,
+  appendMainProcessLog('followup:start', {
+    hasHistory: chatHistory.length > 0,
     recentTopic: recentTopics.length > 0 ? recentTopics[recentTopics.length - 1] : null,
   });
 
-  const systemPrompt = buildGirlfriendSystemPrompt(mood, topicContext, recentTopics);
+  const systemPrompt = buildFollowUpSystemPrompt(topicContext, recentTopics);
 
   const messages = [
     {
@@ -1773,7 +1601,7 @@ async function generateFollowUp(_event, payload) {
 
     messages.push({
       role: 'assistant',
-      content: '嗯我看到了~',
+      content: '好的，我已经看过这道题的图片和题目信息。',
     });
   }
 
@@ -1813,35 +1641,9 @@ async function generateFollowUp(_event, payload) {
     });
   }
 
-  // Adjust temperature and max_tokens based on mood and message type
-  let temperature = 0.75;
-  let maxTokens = 600;
-
-  if (mood.isCurrentNegative) {
-    temperature = 0.4;
-    maxTokens = 80;
-  } else if (mood.consecutiveShort >= 4) {
-    temperature = 0.45;
-    maxTokens = 60;
-  } else if (mood.consecutiveShort >= 3) {
-    temperature = 0.5;
-    maxTokens = 100;
-  } else if (mood.consecutiveShort >= 2) {
-    temperature = 0.55;
-    maxTokens = 150;
-  } else if (mood.consecutiveShort === 1 && mood.isCurrentShort) {
-    temperature = 0.6;
-    maxTokens = 200;
-  } else if (mood.isCurrentGreeting) {
-    temperature = 0.7;
-    maxTokens = 120;
-  } else if (mood.isCurrentQuestion || mood.isCurrentLong) {
-    temperature = 0.72;
-    maxTokens = 800;
-  } else if (mood.isCurrentEnthusiastic) {
-    temperature = 0.8;
-    maxTokens = 400;
-  }
+  // 辅导答疑：固定使用稳健的温度与较充足的长度上限
+  const temperature = 0.6;
+  const maxTokens = 800;
 
   const response = await fetchWithTimeout(
     `${baseUrl}/chat/completions`,
