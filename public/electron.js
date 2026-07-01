@@ -15,6 +15,9 @@ const DEFAULT_QWEN_MODEL = 'qwen3.6-plus';
 const DEFAULT_AI_TIMEOUT_MS = 60000;
 const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// Bounded concurrency for sync image materialization so a large wrongbook does
+// not open thousands of file handles at once or overflow the write queue.
+const SYNC_MATERIALIZE_CONCURRENCY = 6;
 // Write queue to prevent concurrent file writes and data corruption
 let writeQueue = Promise.resolve();
 
@@ -404,34 +407,30 @@ async function materializeRemoteImageRefForLocalStorage(ref) {
     return ref;
   }
 
-  const parsed = parseImageDataUrl(dataUrl);
-  if (!parsed) {
-    return ref;
-  }
+  const kind = ref.kind === 'note' ? 'note' : 'question';
 
-  validateImageBufferSize(parsed.buffer);
+  try {
+    const parsed = parseImageDataUrl(dataUrl);
+    if (!parsed) {
+      return ref;
+    }
 
-  return enqueueWrite(async () => {
+    validateImageBufferSize(parsed.buffer);
+
     const imagesDirectory = getImagesStorageDirectory();
-    await fs.promises.mkdir(imagesDirectory, { recursive: true });
-
-    const imageId = getSafeImageId(
-      ref.id,
-      `img-${ref.kind === 'note' ? 'note' : 'question'}`
-    );
+    const imageId = getSafeImageId(ref.id, `img-${kind}`);
     const extension = getImageExtension(ref.mimeType || parsed.mimeType);
-    const filePath = getSafeImageStoragePath(
+    const filePath = await writeImageBufferToFile(
       imagesDirectory,
       imageId,
-      extension
+      extension,
+      parsed.buffer
     );
-
-    await fs.promises.writeFile(filePath, parsed.buffer);
 
     return {
       id: imageId,
       storage: 'file',
-      kind: ref.kind === 'note' ? 'note' : 'question',
+      kind,
       uri: pathToFileURL(filePath).href,
       createdAt:
         typeof ref.createdAt === 'string' && ref.createdAt.trim()
@@ -439,7 +438,14 @@ async function materializeRemoteImageRefForLocalStorage(ref) {
           : new Date().toISOString(),
       mimeType: ref.mimeType || parsed.mimeType,
     };
-  });
+  } catch (error) {
+    // Keep the inline ref so a single bad image never fails the whole sync.
+    appendMainProcessLog('sync:image-materialize-fallback', {
+      id: ref.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return ref;
+  }
 }
 
 async function materializeQuestionForSync(question) {
@@ -519,7 +525,11 @@ async function syncQuestionsWithServer(_event, questions) {
   }
 
   const nextQuestions = Array.isArray(questions) ? questions : [];
-  const records = await Promise.all(nextQuestions.map(materializeQuestionForSync));
+  const records = await mapWithConcurrency(
+    nextQuestions,
+    SYNC_MATERIALIZE_CONCURRENCY,
+    materializeQuestionForSync
+  );
   const uploadedCount = records.length;
 
   appendMainProcessLog('sync:start', {
@@ -600,8 +610,10 @@ async function syncQuestionsWithServer(_event, questions) {
       throw new Error('SYNC_EMPTY_REMOTE');
     }
 
-    const remoteRecords = await Promise.all(
-      responseJson.records.map(materializeRemoteQuestionForLocalStorage)
+    const remoteRecords = await mapWithConcurrency(
+      responseJson.records,
+      SYNC_MATERIALIZE_CONCURRENCY,
+      materializeRemoteQuestionForLocalStorage
     );
 
     appendMainProcessLog('sync:success', {
@@ -652,6 +664,29 @@ function enqueueWrite(fn) {
   return writeQueue;
 }
 
+// Map over items with a fixed worker pool. Order is preserved. Used by sync so
+// materializing many images stays bounded instead of firing every write at once.
+async function mapWithConcurrency(items, limit, mapper) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  const results = new Array(items.length);
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  let cursor = 0;
+
+  const runWorker = async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+  return results;
+}
+
 function parseImageDataUrl(dataUrl) {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
 
@@ -699,6 +734,17 @@ function getSafeImageStoragePath(imagesDirectory, imageId, extension) {
     throw new Error('INVALID_IMAGE_PATH');
   }
 
+  return filePath;
+}
+
+// Write an image buffer straight to disk. Each image has a unique filename, so
+// these writes never conflict with each other and do not need the write queue
+// that serializes questions.json. Keeping them off the queue lets sync
+// materialize an unlimited number of images without hitting WRITE_QUEUE_FULL.
+async function writeImageBufferToFile(imagesDirectory, imageId, extension, buffer) {
+  await fs.promises.mkdir(imagesDirectory, { recursive: true });
+  const filePath = getSafeImageStoragePath(imagesDirectory, imageId, extension);
+  await fs.promises.writeFile(filePath, buffer);
   return filePath;
 }
 

@@ -319,16 +319,18 @@ export default function ReviewPage({
             )}
 
             {/* 题目图片 */}
-            <div className="card-image-wrap">
-              <img
-                src={currentQuestion.image}
-                alt={currentQuestion.title}
-                className="card-image"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            </div>
+            {currentQuestion.image && (
+              <div className="card-image-wrap">
+                <img
+                  src={currentQuestion.image}
+                  alt={currentQuestion.title}
+                  className="card-image"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
 
             {/* 题目内容 */}
             {currentQuestion.questionText && (

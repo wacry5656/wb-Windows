@@ -62,9 +62,7 @@ export async function generateAnalysisUpdates(
       solutionMethods:
         result.solution_methods && result.solution_methods.length > 0
           ? result.solution_methods
-          : result.analysis_summary
-            ? [result.analysis_summary]
-            : [],
+          : [],
       cautions: result.cautions,
       notices: result.cautions,
       studyAdvice: buildStudyAdvice(

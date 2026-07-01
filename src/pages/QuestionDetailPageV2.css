@@ -21,6 +21,11 @@
   gap: 20px;
 }
 
+/* Text-only questions have no image, so the info panel takes the full width. */
+.detail-container--no-image {
+  grid-template-columns: 1fr;
+}
+
 .detail-image-section,
 .detail-info-section,
 .detail-empty {

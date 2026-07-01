@@ -237,22 +237,24 @@ export default function QuestionListPage({
               className="question-card"
               onClick={() => navigate(`/questions/${question.id}`)}
             >
-              <div className="card-image-container">
-                <button
-                  type="button"
-                  className="btn-zoom-image"
-                  onClick={(e) => handleZoomClick(e, question.image, question.title)}
-                  aria-label={`放大查看 ${question.title}`}
-                >
-                  查看大图
-                </button>
-                <img
-                  src={question.image}
-                  alt={question.title}
-                  className="card-image"
-                  onClick={(e) => handleZoomClick(e, question.image, question.title)}
-                />
-              </div>
+              {question.image && (
+                <div className="card-image-container">
+                  <button
+                    type="button"
+                    className="btn-zoom-image"
+                    onClick={(e) => handleZoomClick(e, question.image, question.title)}
+                    aria-label={`放大查看 ${question.title}`}
+                  >
+                    查看大图
+                  </button>
+                  <img
+                    src={question.image}
+                    alt={question.title}
+                    className="card-image"
+                    onClick={(e) => handleZoomClick(e, question.image, question.title)}
+                  />
+                </div>
+              )}
 
               <div className="card-content">
                 <div className="card-header">

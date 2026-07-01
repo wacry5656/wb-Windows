@@ -51,10 +51,19 @@ function readJson(req) {
   });
 }
 
+function safeTokenEqual(a, b) {
+  const bufferA = Buffer.from(String(a));
+  const bufferB = Buffer.from(String(b));
+  if (bufferA.length !== bufferB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufferA, bufferB);
+}
+
 function requireAuth(req, res, syncToken) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  if (!token || token !== syncToken) {
+  if (!token || !safeTokenEqual(token, syncToken)) {
     sendJson(res, 401, { error: 'UNAUTHORIZED' });
     return false;
   }

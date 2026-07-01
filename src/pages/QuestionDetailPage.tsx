@@ -381,18 +381,24 @@ export default function QuestionDetailPage({
         ← 返回错题本
       </button>
 
-      <div className="detail-container">
-        <div className="detail-image-section">
-          <button
-            type="button"
-            className="detail-image-button"
-            onClick={() => setIsImagePreviewOpen(true)}
-            aria-label="放大查看错题图片"
-          >
-            <img src={question.image} alt={question.title} className="detail-image" />
-          </button>
-          <p className="detail-image-tip">点击可放大查看</p>
-        </div>
+      <div
+        className={`detail-container${
+          question.image ? '' : ' detail-container--no-image'
+        }`}
+      >
+        {question.image && (
+          <div className="detail-image-section">
+            <button
+              type="button"
+              className="detail-image-button"
+              onClick={() => setIsImagePreviewOpen(true)}
+              aria-label="放大查看错题图片"
+            >
+              <img src={question.image} alt={question.title} className="detail-image" />
+            </button>
+            <p className="detail-image-tip">点击可放大查看</p>
+          </div>
+        )}
 
         <div className="detail-info-section">
           <div className="detail-header">
@@ -953,7 +959,7 @@ export default function QuestionDetailPage({
         </div>
       </div>
 
-      {isImagePreviewOpen && (
+      {isImagePreviewOpen && question.image && (
         <div
           className="detail-lightbox"
           role="dialog"

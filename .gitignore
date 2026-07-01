@@ -45,4 +45,3 @@ data/images/
 
 # Generated test assets
 data/test-assets/ai-smoke-results.json
-.env

@@ -6,7 +6,6 @@ export interface QwenAnalysisResponse {
   solution_methods?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   cautions: string[];
-  analysis_summary?: string;
 }
 
 export interface QwenDetailedExplanationResponse {
