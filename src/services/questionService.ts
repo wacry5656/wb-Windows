@@ -80,7 +80,12 @@ export function createQuestion(
     lastReviewedAt: undefined,
     nextReviewAt: calculateNextReviewAt(timestamp, 0),
     reviewStatus: 'new',
+    reviewEvents: [],
+    imageRefsUpdatedAt: imageRef ? timestamp : undefined,
+    imageRefsComplete: true,
     noteImagesUpdatedAt: undefined,
+    noteImageRefsUpdatedAt: undefined,
+    noteImageRefsComplete: true,
     reviewUpdatedAt: undefined,
     noteImages: undefined,
     noteImageRefs: [],
@@ -157,22 +162,40 @@ export function replaceQuestionFollowUpChatsById(
 
 export function deleteQuestionById(
   questions: Question[],
-  id: string
+  id: string,
+  options: QuestionMutationOptions = {}
 ): Question[] {
-  const timestamp = new Date().toISOString();
+  const requestedTimestamp = options.now || new Date().toISOString();
+  return questions.map((question) => {
+    if (question.id !== id) {
+      return question;
+    }
+    const timestamp = getTimestampAfter(requestedTimestamp, question.restoredAt);
+    return applyQuestionUpdates(
+      question,
+      { deleted: true, deletedAt: timestamp },
+      { now: timestamp }
+    );
+  });
+}
 
-  return questions.map((question) =>
-    question.id === id
-      ? applyQuestionUpdates(
-          question,
-          {
-            deleted: true,
-            deletedAt: timestamp,
-          },
-          { now: timestamp }
-        )
-      : question
-  );
+export function restoreQuestionById(
+  questions: Question[],
+  id: string,
+  options: QuestionMutationOptions = {}
+): Question[] {
+  const requestedTimestamp = options.now || new Date().toISOString();
+  return questions.map((question) => {
+    if (question.id !== id || !question.deleted) {
+      return question;
+    }
+    const timestamp = getTimestampAfter(requestedTimestamp, question.deletedAt);
+    return applyQuestionUpdates(
+      question,
+      { deleted: false, restoredAt: timestamp },
+      { now: timestamp }
+    );
+  });
 }
 
 export function findQuestionById(
@@ -233,7 +256,10 @@ export function applyQuestionUpdates(
   const timestamp = options.now || new Date().toISOString();
   const nextImageRefs = resolveImageRefs(question, updates, timestamp);
   const nextNoteImageRefs = resolveNoteImageRefs(question, updates, timestamp);
-  const nextImage = resolveNextImage(nextImageRefs, updates.image, question.image);
+  const nextImage =
+    Array.isArray(updates.imageRefs) && updates.imageRefs.length === 0
+      ? ''
+      : resolveNextImage(nextImageRefs, updates.image, question.image);
   const coreContentChanged = hasCoreContentChanges(question, updates, nextImageRefs, nextImage);
   const notesChanged = hasNotesChanges(question, updates);
   const noteImagesChanged = !areImageRefsEqual(nextNoteImageRefs, question.noteImageRefs);
@@ -259,6 +285,26 @@ export function applyQuestionUpdates(
         : noteImagesChanged
           ? timestamp
           : question.noteImagesUpdatedAt,
+    imageRefsUpdatedAt:
+      typeof updates.imageRefsUpdatedAt === 'string'
+        ? updates.imageRefsUpdatedAt
+        : coreContentChanged && !areImageRefsEqual(nextImageRefs, question.imageRefs)
+          ? timestamp
+          : question.imageRefsUpdatedAt,
+    imageRefsComplete:
+      updates.imageRefsComplete ??
+      (Array.isArray(updates.imageRefs) ? true : question.imageRefsComplete),
+    noteImageRefsUpdatedAt:
+      typeof updates.noteImageRefsUpdatedAt === 'string'
+        ? updates.noteImageRefsUpdatedAt
+        : noteImagesChanged
+          ? timestamp
+          : question.noteImageRefsUpdatedAt,
+    noteImageRefsComplete:
+      updates.noteImageRefsComplete ??
+      (Array.isArray(updates.noteImageRefs) || Array.isArray(updates.noteImages)
+        ? true
+        : question.noteImageRefsComplete),
     reviewUpdatedAt:
       typeof updates.reviewUpdatedAt === 'string'
         ? updates.reviewUpdatedAt
@@ -278,7 +324,7 @@ function resolveImageRefs(
   updates: Partial<Question>,
   timestamp: string
 ): ImageRef[] {
-  if (Array.isArray(updates.imageRefs) && updates.imageRefs.length > 0) {
+  if (Array.isArray(updates.imageRefs)) {
     return updates.imageRefs;
   }
 
@@ -442,6 +488,8 @@ function isImageRefEqual(left: ImageRef, right: ImageRef): boolean {
     left.kind === right.kind &&
     left.createdAt === right.createdAt &&
     left.mimeType === right.mimeType &&
+    left.contentHash === right.contentHash &&
+    left.status === right.status &&
     left.uri === right.uri &&
     left.dataUrl === right.dataUrl
   );
@@ -465,4 +513,13 @@ function normalizeTags(tags: unknown): string[] {
     .map((tag) => tag.trim())
     .filter(Boolean)
     .filter((tag, index, all) => all.indexOf(tag) === index);
+}
+
+function getTimestampAfter(candidate: string, floor?: string): string {
+  const candidateMs = new Date(candidate).getTime();
+  const floorMs = typeof floor === 'string' ? new Date(floor).getTime() : Number.NaN;
+  const safeCandidateMs = Number.isFinite(candidateMs) ? candidateMs : Date.now();
+  return new Date(
+    Number.isFinite(floorMs) ? Math.max(safeCandidateMs, floorMs + 1) : safeCandidateMs
+  ).toISOString();
 }

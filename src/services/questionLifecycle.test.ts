@@ -5,8 +5,13 @@ import {
   isQuestionDueForReview,
   normalizeQuestions,
 } from './questionModel';
-import { markQuestionReviewed } from './reviewService';
-import { createQuestion, deleteQuestionById, updateQuestionById } from './questionService';
+import { markQuestionReviewed, revertLastReview } from './reviewService';
+import {
+  createQuestion,
+  deleteQuestionById,
+  restoreQuestionById,
+  updateQuestionById,
+} from './questionService';
 
 describe('question lifecycle services', () => {
   test('createQuestion seeds sync and review metadata', () => {
@@ -65,11 +70,11 @@ describe('question lifecycle services', () => {
   });
 
   test('normalizeQuestions backfills follow-up message ids for legacy records', () => {
-    const [question] = normalizeQuestions([
+    const legacyQuestions = [
       {
         id: 'legacy-chat-1',
         title: '旧追问',
-        image: 'data:image/png;base64,legacy',
+        questionText: '旧题目内容',
         category: '数学',
         createdAt: '2026-04-10T00:00:00.000Z',
         followUpChats: [
@@ -78,18 +83,31 @@ describe('question lifecycle services', () => {
             content: '为什么这里要分类讨论？',
             createdAt: '2026-04-10T01:00:00.000Z',
           },
+          {
+            role: 'user',
+            content: '为什么这里要分类讨论？',
+            createdAt: '2026-04-10T01:00:00.000Z',
+          },
         ],
       },
-    ]);
+    ];
+    const firstNormalization = normalizeQuestions(legacyQuestions);
+    const secondNormalization = normalizeQuestions(legacyQuestions);
+    const normalizedAgain = normalizeQuestions(firstNormalization);
+    const [question] = firstNormalization;
 
-    expect(question.followUpChats).toEqual([
+    expect(secondNormalization).toEqual(firstNormalization);
+    expect(normalizedAgain).toEqual(firstNormalization);
+    expect(question.followUpChats).toHaveLength(2);
+    expect(question.followUpChats?.[0]).toEqual(
       expect.objectContaining({
-        id: expect.any(String),
+        id: expect.stringMatching(/^legacy-followup-[a-f0-9]{64}$/),
         role: 'user',
         content: '为什么这里要分类讨论？',
         createdAt: '2026-04-10T01:00:00.000Z',
-      }),
-    ]);
+      })
+    );
+    expect(question.followUpChats?.[1].id).not.toBe(question.followUpChats?.[0].id);
   });
 
   test('deleteQuestionById keeps a sync tombstone and hides the record from active lists', () => {
@@ -136,7 +154,131 @@ describe('question lifecycle services', () => {
         syncStatus: 'modified',
       })
     );
-    expect(reviewedQuestion.nextReviewAt).toBe('2026-04-21T08:00:00.000Z');
+    expect(reviewedQuestion.nextReviewAt).toBe('2026-04-19T08:00:00.000Z');
+    expect(reviewedQuestion.reviewEvents).toEqual([
+      expect.objectContaining({
+        kind: 'review',
+        quality: 2,
+        reviewedAt: '2026-04-18T08:00:00.000Z',
+      }),
+    ]);
+  });
+
+  test('review events support an explicit rollback without max-count lock-in', () => {
+    const question = createQuestion(
+      'rollback',
+      '',
+      '数学',
+      { questionText: '1 + 1 = ?', now: '2026-04-17T00:00:00.000Z' }
+    );
+    const first = markQuestionReviewed(question, 2, {
+      now: '2026-04-18T00:00:00.000Z',
+    });
+    const second = markQuestionReviewed(first, 3, {
+      now: '2026-04-19T00:00:00.000Z',
+    });
+    const reverted = revertLastReview(second, {
+      now: '2026-04-19T00:01:00.000Z',
+    });
+
+    expect(second.reviewCount).toBe(2);
+    expect(reverted.reviewCount).toBe(1);
+    expect(reverted.reviewEvents[reverted.reviewEvents.length - 1]).toEqual(
+      expect.objectContaining({
+        kind: 'revert',
+        targetEventId: second.reviewEvents[1].id,
+      })
+    );
+  });
+
+  test('reverting the only successful review restores the createdAt plus one-day schedule', () => {
+    const question = createQuestion(
+      'single rollback',
+      '',
+      '数学',
+      { questionText: '1 + 1 = ?', now: '2026-04-17T00:00:00.000Z' }
+    );
+    const reviewed = markQuestionReviewed(question, 2, {
+      now: '2026-04-18T08:00:00.000Z',
+    });
+    const reverted = revertLastReview(reviewed, {
+      now: '2026-04-19T08:00:00.000Z',
+    });
+
+    expect(reverted.reviewCount).toBe(0);
+    expect(reverted.nextReviewAt).toBe('2026-04-18T00:00:00.000Z');
+  });
+
+  test('legacy review counts become deterministic cross-device events', () => {
+    const [question] = normalizeQuestions([
+      {
+        id: 'legacy-review-question',
+        title: 'legacy',
+        questionText: 'text',
+        category: '数学',
+        createdAt: '2026-04-10T00:00:00.000Z',
+        reviewCount: 2,
+        lastReviewedAt: '2026-04-12T00:00:00.000Z',
+      },
+    ]);
+
+    expect(question.reviewEvents.map((event) => event.id)).toEqual([
+      'legacy-review:legacy-review-question:1',
+      'legacy-review:legacy-review-question:2',
+    ]);
+  });
+
+  test('restore writes an explicit restoredAt later than the tombstone', () => {
+    const question = createQuestion('restore', '', '数学', {
+      questionText: 'text',
+      now: '2026-04-17T00:00:00.000Z',
+    });
+    const deleted = deleteQuestionById([question], question.id, {
+      now: '2026-04-18T00:00:00.000Z',
+    });
+    const restored = restoreQuestionById(deleted, question.id, {
+      now: '2026-04-20T00:00:00.000Z',
+    });
+
+    expect(restored[0]).toEqual(
+      expect.objectContaining({
+        deleted: false,
+        restoredAt: '2026-04-20T00:00:00.000Z',
+        syncStatus: 'modified',
+      })
+    );
+    expect(restored[0].deletedAt).toBeDefined();
+  });
+
+  test('restore stays newer than a tombstone from a clock-ahead device', () => {
+    const question = createQuestion('clock skew', '', '数学', {
+      questionText: 'text',
+      now: '2026-04-17T00:00:00.000Z',
+    });
+    const deleted = deleteQuestionById([question], question.id, {
+      now: '2027-01-01T00:00:00.000Z',
+    });
+    const restored = restoreQuestionById(deleted, question.id, {
+      now: '2026-04-20T00:00:00.000Z',
+    });
+
+    expect(restored[0].restoredAt).toBe('2027-01-01T00:00:00.001Z');
+    expect(restored[0].updatedAt).toBe('2027-01-01T00:00:00.001Z');
+  });
+
+  test('normalization preserves active title-only records instead of silently dropping them', () => {
+    const questions = normalizeQuestions([
+      {
+        id: 'title-only',
+        title: 'title only',
+        category: '数学',
+        createdAt: '2026-04-17T00:00:00.000Z',
+      },
+    ]);
+
+    expect(questions).toHaveLength(1);
+    expect(questions[0].image).toBe('');
+    expect(questions[0].questionText).toBe('');
   });
 
   test('updateQuestionById refreshes updatedAt and marks sync as modified for content mutations', () => {

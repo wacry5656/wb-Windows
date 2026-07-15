@@ -689,6 +689,8 @@
 .postpone-row {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .btn-postpone {
@@ -706,6 +708,21 @@
   color: #5a6a7a;
   background: #f5f6f8;
   border-color: #bdc3c7;
+}
+
+.btn-revert-review {
+  padding: 10px 18px;
+  border: 1px solid rgba(99, 102, 241, 0.24);
+  border-radius: 12px;
+  color: #4f46e5;
+  background: rgba(238, 242, 255, 0.86);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.btn-revert-review:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.13);
 }
 
 /* Mark button (empty state) */

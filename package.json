@@ -63,6 +63,7 @@
       "build/**/*",
       "public/electron.js",
       "public/preload.js",
+      "public/sync-utils.js",
       "package.json"
     ],
     "directories": {

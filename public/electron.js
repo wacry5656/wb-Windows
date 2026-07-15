@@ -1,9 +1,15 @@
 ﻿const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const { dialog } = require('electron');
 const fs = require('fs');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { fileURLToPath, pathToFileURL } = require('url');
 const dotenv = require('dotenv');
+const {
+  createImageContentHash,
+  verifyImageContentHash,
+} = require('./sync-utils');
 
 let mainWindow;
 
@@ -18,6 +24,10 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 // Bounded concurrency for sync image materialization so a large wrongbook does
 // not open thousands of file handles at once or overflow the write queue.
 const SYNC_MATERIALIZE_CONCURRENCY = 6;
+const LEGACY_SYNC_MAX_REQUEST_BYTES = 48 * 1024 * 1024;
+const DEFAULT_V2_BATCH_BYTES = 16 * 1024 * 1024;
+const DEFAULT_SYNC_PAGE_LIMIT = 250;
+const DEFAULT_SYNC_TIMEOUT_MS = 300000;
 // Write queue to prevent concurrent file writes and data corruption
 let writeQueue = Promise.resolve();
 
@@ -280,7 +290,6 @@ async function saveQuestionsToFile(_event, questions) {
   const result = await enqueueWrite(async () => {
     await ensureLegacyQuestionsMigrated();
     const storageFilePath = getQuestionsStorageFilePath();
-    const previousQuestions = await readQuestionsArrayFromFile(storageFilePath);
     const nextValue = Array.isArray(questions) ? questions : [];
 
     await fs.promises.mkdir(path.dirname(storageFilePath), { recursive: true });
@@ -293,15 +302,12 @@ async function saveQuestionsToFile(_event, questions) {
       'utf8'
     );
     await fs.promises.rename(tmpFilePath, storageFilePath);
-    const cleanedImagePaths = await cleanupRemovedImageFiles(
-      previousQuestions,
-      nextValue
-    );
-
     return {
       success: true,
       storageFilePath,
-      cleanedImagePaths,
+      // Image deletion is deliberately decoupled from ordinary saves. A stale
+      // renderer snapshot must never be able to physically destroy a newer image.
+      cleanedImagePaths: [],
     };
   });
 
@@ -328,8 +334,9 @@ async function persistImageToFile(_event, payload) {
     const imagesDirectory = getImagesStorageDirectory();
     await fs.promises.mkdir(imagesDirectory, { recursive: true });
 
+    const contentHash = createImageContentHash(parsed.buffer);
     const extension = getImageExtension(parsed.mimeType);
-    const imageId = createResourceId(`img-${kind}`);
+    const imageId = `img-${contentHash.slice(0, 32)}`;
     const filePath = getSafeImageStoragePath(
       imagesDirectory,
       imageId,
@@ -345,6 +352,8 @@ async function persistImageToFile(_event, payload) {
       uri: pathToFileURL(filePath).href,
       createdAt,
       mimeType: parsed.mimeType,
+      contentHash,
+      status: 'available',
     };
   });
 }
@@ -364,36 +373,72 @@ async function readImageDataUrlFromFile(_event, payload) {
 
 async function materializeImageRefForSync(ref) {
   if (!ref || typeof ref !== 'object') {
-    return ref;
+    return { ok: false };
   }
 
   if (ref.storage === 'inline' && typeof ref.dataUrl === 'string') {
-    return ref;
+    const parsed = parseImageDataUrl(ref.dataUrl.trim());
+    if (!parsed) {
+      return { ok: false, id: ref.id };
+    }
+    try {
+      validateImageBufferSize(parsed.buffer);
+    } catch (_error) {
+      return { ok: false, id: ref.id };
+    }
+    const verification = verifyImageContentHash(parsed.buffer, ref.contentHash);
+    const contentHash = verification.contentHash;
+    if (!verification.matches) {
+      appendMainProcessLog('sync:image-hash-mismatch', { id: ref.id });
+      return { ok: false, id: ref.id };
+    }
+    return {
+      ok: true,
+      ref: {
+        id: ref.id,
+        kind: ref.kind,
+        createdAt: ref.createdAt,
+        mimeType: ref.mimeType || parsed.mimeType,
+        contentHash,
+        status: 'available',
+        storage: 'inline',
+        dataUrl: ref.dataUrl,
+      },
+    };
   }
 
   const uri = typeof ref.uri === 'string' ? ref.uri : '';
   if (!isFileImageUri(uri)) {
-    return ref;
+    return { ok: false, id: ref.id };
   }
 
   try {
     const filePath = resolveImageFilePath(uri, { requireExists: true });
     const buffer = await fs.promises.readFile(filePath);
     const mimeType = ref.mimeType || getMimeTypeFromPath(filePath);
+    const verification = verifyImageContentHash(buffer, ref.contentHash);
+    if (!verification.matches) {
+      throw new Error('IMAGE_HASH_MISMATCH');
+    }
     return {
-      id: ref.id,
-      kind: ref.kind,
-      createdAt: ref.createdAt,
-      mimeType,
-      storage: 'inline',
-      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+      ok: true,
+      ref: {
+        id: ref.id,
+        kind: ref.kind,
+        createdAt: ref.createdAt,
+        mimeType,
+        contentHash: verification.contentHash,
+        status: 'available',
+        storage: 'inline',
+        dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+      },
     };
   } catch (error) {
     appendMainProcessLog('sync:image-inline-skip', {
       id: ref.id,
       message: error instanceof Error ? error.message : String(error),
     });
-    return ref;
+    return { ok: false, id: ref.id };
   }
 }
 
@@ -419,10 +464,16 @@ async function materializeRemoteImageRefForLocalStorage(ref) {
 
     const imagesDirectory = getImagesStorageDirectory();
     const imageId = getSafeImageId(ref.id, `img-${kind}`);
+    const verification = verifyImageContentHash(parsed.buffer, ref.contentHash);
+    const contentHash = verification.contentHash;
+    if (!verification.matches) {
+      throw new Error('IMAGE_HASH_MISMATCH');
+    }
     const extension = getImageExtension(ref.mimeType || parsed.mimeType);
+    const storageFileId = `${imageId}-${contentHash.slice(0, 16)}`;
     const filePath = await writeImageBufferToFile(
       imagesDirectory,
-      imageId,
+      storageFileId,
       extension,
       parsed.buffer
     );
@@ -437,6 +488,8 @@ async function materializeRemoteImageRefForLocalStorage(ref) {
           ? ref.createdAt
           : new Date().toISOString(),
       mimeType: ref.mimeType || parsed.mimeType,
+      contentHash,
+      status: 'available',
     };
   } catch (error) {
     // Keep the inline ref so a single bad image never fails the whole sync.
@@ -453,26 +506,39 @@ async function materializeQuestionForSync(question) {
     return question;
   }
 
-  const imageRefs = Array.isArray(question.imageRefs)
+  const imageResults = Array.isArray(question.imageRefs)
     ? await Promise.all(question.imageRefs.map(materializeImageRefForSync))
     : [];
-  const noteImageRefs = Array.isArray(question.noteImageRefs)
+  const noteImageResults = Array.isArray(question.noteImageRefs)
     ? await Promise.all(question.noteImageRefs.map(materializeImageRefForSync))
     : [];
-  const firstQuestionImage = imageRefs[0];
-  const legacyImage =
-    typeof firstQuestionImage?.dataUrl === 'string'
-      ? firstQuestionImage.dataUrl
-      : question.image;
+  const imageGroupComplete =
+    question.imageRefsComplete !== false && imageResults.every((result) => result.ok);
+  const noteImageGroupComplete =
+    question.noteImageRefsComplete !== false &&
+    noteImageResults.every((result) => result.ok);
+  const {
+    image: _legacyImage,
+    imageRefs: _localImageRefs,
+    noteImages: _legacyNoteImages,
+    noteImageRefs: _localNoteImageRefs,
+    ...canonicalQuestion
+  } = question;
 
   return {
-    ...question,
-    image: legacyImage,
-    imageRefs,
-    noteImages: noteImageRefs
-      .map((ref) => (typeof ref?.dataUrl === 'string' ? ref.dataUrl : null))
-      .filter(Boolean),
-    noteImageRefs,
+    ...canonicalQuestion,
+    ...(imageGroupComplete
+      ? {
+          imageRefs: imageResults.map((result) => result.ref),
+          imageRefsComplete: true,
+        }
+      : { imageRefsComplete: false }),
+    ...(noteImageGroupComplete
+      ? {
+          noteImageRefs: noteImageResults.map((result) => result.ref),
+          noteImageRefsComplete: true,
+        }
+      : { noteImageRefsComplete: false }),
   };
 }
 
@@ -499,7 +565,7 @@ async function materializeRemoteQuestionForLocalStorage(question) {
   };
 }
 
-async function syncQuestionsWithServer(_event, questions) {
+async function syncQuestionsWithServer(event, questions) {
   loadEnvFile();
   const syncApiUrl = process.env.SYNC_API_URL?.trim();
   const syncToken = process.env.SYNC_TOKEN?.trim();
@@ -539,79 +605,27 @@ async function syncQuestionsWithServer(_event, questions) {
   });
 
   try {
-    const response = await fetchWithTimeout(
-      syncApiUrl,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${syncToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+    sendSyncProgress(event, 'prepare', 0, 0);
+    const capabilities = await detectSyncCapabilities(syncApiUrl, syncToken);
+    const syncResult = capabilities.supportsV2
+      ? await syncQuestionsV2({
+          event,
+          syncApiUrl,
+          syncToken,
           deviceId,
           records,
-        }),
-      },
-      120000
-    );
-
-    const responseText = await response.text();
-    let responseJson = null;
-    try {
-      responseJson = JSON.parse(responseText);
-    } catch (_error) {
-      responseJson = null;
-    }
-
-    if (!response.ok) {
-      const error = new Error('SYNC_REQUEST_FAILED');
-      error.status = response.status;
-      error.details = responseJson ?? responseText;
-      appendMainProcessLog('sync:error', {
-        url: syncApiUrl,
-        deviceId,
-        uploadedCount,
-        status: response.status,
-        details: responseJson ?? responseText,
-      });
-      throw error;
-    }
-
-    if (!responseJson || !Object.prototype.hasOwnProperty.call(responseJson, 'records')) {
-      appendMainProcessLog('sync:error', {
-        url: syncApiUrl,
-        deviceId,
-        uploadedCount,
-        message: 'SYNC_INVALID_RESPONSE',
-        details: responseJson ?? responseText,
-      });
-      throw new Error('SYNC_INVALID_RESPONSE');
-    }
-
-    if (!Array.isArray(responseJson.records)) {
-      appendMainProcessLog('sync:error', {
-        url: syncApiUrl,
-        deviceId,
-        uploadedCount,
-        message: 'SYNC_INVALID_RECORDS',
-        details: responseJson.records,
-      });
-      throw new Error('SYNC_INVALID_RECORDS');
-    }
-
-    if (uploadedCount > 0 && responseJson.records.length === 0) {
-      appendMainProcessLog('sync:error', {
-        url: syncApiUrl,
-        deviceId,
-        uploadedCount,
-        receivedCount: 0,
-        message: 'SYNC_EMPTY_REMOTE',
-      });
-      throw new Error('SYNC_EMPTY_REMOTE');
-    }
+          capabilities,
+        })
+      : await syncQuestionsLegacy({
+          event,
+          syncApiUrl,
+          syncToken,
+          deviceId,
+          records,
+        });
 
     const remoteRecords = await mapWithConcurrency(
-      responseJson.records,
+      syncResult.records,
       SYNC_MATERIALIZE_CONCURRENCY,
       materializeRemoteQuestionForLocalStorage
     );
@@ -621,33 +635,399 @@ async function syncQuestionsWithServer(_event, questions) {
       deviceId,
       uploadedCount,
       receivedCount: remoteRecords.length,
-      serverTime: responseJson?.serverTime,
+      serverTime: syncResult.serverTime,
+      protocolVersion: syncResult.protocolVersion,
+      generation: syncResult.generation,
     });
 
     return {
       ok: true,
-      serverTime: responseJson?.serverTime,
+      serverTime: syncResult.serverTime,
+      protocolVersion: syncResult.protocolVersion,
+      generation: syncResult.generation,
       records: remoteRecords,
     };
   } catch (error) {
-    if (
-      error instanceof Error &&
-      ![
-        'SYNC_REQUEST_FAILED',
-        'SYNC_INVALID_RESPONSE',
-        'SYNC_INVALID_RECORDS',
-        'SYNC_EMPTY_REMOTE',
-      ].includes(error.message)
-    ) {
-      appendMainProcessLog('sync:error', {
-        url: syncApiUrl,
-        deviceId,
-        uploadedCount,
-        message: error.message,
-      });
-    }
+    appendMainProcessLog('sync:error', {
+      url: syncApiUrl,
+      deviceId,
+      uploadedCount,
+      message: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
+}
+
+async function detectSyncCapabilities(syncApiUrl, syncToken) {
+  try {
+    const response = await fetchWithTimeout(
+      syncApiUrl,
+      {
+        method: 'OPTIONS',
+        headers: {
+          Authorization: `Bearer ${syncToken}`,
+          Accept: 'application/json',
+        },
+      },
+      15000
+    );
+    if (!response.ok) {
+      return { supportsV2: false };
+    }
+    const payload = await readJsonResponse(response);
+    const protocolVersions = Array.isArray(payload?.protocolVersions)
+      ? payload.protocolVersions.map(Number)
+      : [];
+    const supportsV2 =
+      Number(payload?.protocolVersion) === 2 ||
+      Number(payload?.preferredProtocolVersion) === 2 ||
+      protocolVersions.includes(2) ||
+      response.headers.get('x-wrongbook-sync-protocol') === '2';
+    return {
+      ...payload,
+      supportsV2,
+      capabilities: Array.isArray(payload?.capabilities) ? payload.capabilities : [],
+    };
+  } catch (error) {
+    appendMainProcessLog('sync:capability-fallback', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return { supportsV2: false };
+  }
+}
+
+async function syncQuestionsLegacy({ event, syncApiUrl, syncToken, deviceId, records }) {
+  const legacyRecords = records.map((record) => ({
+    ...record,
+    ...(record.imageRefsComplete === true &&
+    Array.isArray(record.imageRefs) &&
+    record.imageRefs.length === 0
+      ? { image: '' }
+      : {}),
+    ...(record.noteImageRefsComplete === true &&
+    Array.isArray(record.noteImageRefs) &&
+    record.noteImageRefs.length === 0
+      ? { noteImages: [] }
+      : {}),
+  }));
+  const payload = { deviceId, records: legacyRecords };
+  const body = JSON.stringify(payload);
+  const requestBytes = Buffer.byteLength(body);
+  const duplicatedLegacyImageBytes = countInlineImageCharacters(legacyRecords);
+  if (
+    requestBytes > LEGACY_SYNC_MAX_REQUEST_BYTES ||
+    requestBytes + duplicatedLegacyImageBytes > LEGACY_SYNC_MAX_REQUEST_BYTES
+  ) {
+    throw new Error('SYNC_SERVER_UPGRADE_REQUIRED');
+  }
+
+  sendSyncProgress(event, 'upload', 1, 1);
+  const response = await postSyncJson(syncApiUrl, syncToken, payload, {
+    timeoutMs: DEFAULT_SYNC_TIMEOUT_MS,
+  });
+  if (!Array.isArray(response?.records)) {
+    throw new Error('SYNC_INVALID_RECORDS');
+  }
+  sendSyncProgress(event, 'download', 1, 1);
+  return {
+    protocolVersion: 1,
+    serverTime: response.serverTime,
+    records: response.records,
+  };
+}
+
+function countInlineImageCharacters(records) {
+  let total = 0;
+  for (const record of records) {
+    for (const field of ['imageRefs', 'noteImageRefs']) {
+      if (!Array.isArray(record?.[field])) {
+        continue;
+      }
+      for (const ref of record[field]) {
+        if (typeof ref?.dataUrl === 'string') {
+          total += Buffer.byteLength(ref.dataUrl);
+        }
+      }
+    }
+  }
+  return total;
+}
+
+async function syncQuestionsV2({
+  event,
+  syncApiUrl,
+  syncToken,
+  deviceId,
+  records,
+  capabilities,
+}) {
+  const maxDecompressedBytes = toPositiveInteger(
+    capabilities.maxDecompressedBytes,
+    50 * 1024 * 1024
+  );
+  const maxRequestBytes = toPositiveInteger(
+    capabilities.maxRequestBytes,
+    50 * 1024 * 1024
+  );
+  const batchBytes = Math.min(
+    DEFAULT_V2_BATCH_BYTES,
+    Math.min(maxDecompressedBytes, maxRequestBytes) - 64 * 1024
+  );
+  if (batchBytes <= 0) {
+    throw new Error('SYNC_REQUEST_TOO_LARGE');
+  }
+  const batches = createSyncRecordBatches(
+    records,
+    deviceId,
+    batchBytes,
+    maxDecompressedBytes - 64 * 1024
+  );
+  const useGzip = capabilities.capabilities.includes('gzip-v1');
+  let generation;
+  let serverTime;
+
+  for (let index = 0; index < batches.length; index += 1) {
+    sendSyncProgress(event, 'upload', index + 1, batches.length);
+    const response = await postSyncJson(
+      syncApiUrl,
+      syncToken,
+      {
+        protocolVersion: 2,
+        mode: 'push',
+        deviceId,
+        records: batches[index],
+      },
+      {
+        gzip: useGzip,
+        maxRequestBytes,
+        maxDecompressedBytes,
+        timeoutMs: DEFAULT_SYNC_TIMEOUT_MS,
+      }
+    );
+    if (Number(response?.protocolVersion) !== 2 || response?.mode !== 'push') {
+      throw new Error('SYNC_INVALID_RESPONSE');
+    }
+    if (
+      Number(response.ignoredCount) > 0 ||
+      Number(response.acceptedCount) !== batches[index].length
+    ) {
+      throw new Error('SYNC_RECORDS_REJECTED');
+    }
+    generation = typeof response.generation === 'string' ? response.generation : generation;
+    serverTime = response.serverTime || serverTime;
+  }
+
+  const pulled = await pullCompleteSnapshot({
+    event,
+    syncApiUrl,
+    syncToken,
+    deviceId,
+    capabilities,
+    useGzip,
+    maxRequestBytes,
+    maxDecompressedBytes,
+  });
+  return {
+    protocolVersion: 2,
+    generation: pulled.generation || generation,
+    serverTime: pulled.serverTime || serverTime,
+    records: pulled.records,
+  };
+}
+
+async function pullCompleteSnapshot(options) {
+  for (let restart = 0; restart < 3; restart += 1) {
+    try {
+      return await pullSnapshotAttempt(options);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'SYNC_SNAPSHOT_STALE') {
+        throw error;
+      }
+      appendMainProcessLog('sync:pull-restart', { restart: restart + 1 });
+    }
+  }
+  throw new Error('SYNC_SNAPSHOT_STALE');
+}
+
+async function pullSnapshotAttempt({
+  event,
+  syncApiUrl,
+  syncToken,
+  deviceId,
+  capabilities,
+  useGzip,
+  maxRequestBytes,
+  maxDecompressedBytes,
+}) {
+  const pageLimit = Math.min(
+    DEFAULT_SYNC_PAGE_LIMIT,
+    toPositiveInteger(capabilities.maxPageLimit, DEFAULT_SYNC_PAGE_LIMIT)
+  );
+  const records = [];
+  const seenCursors = new Set();
+  let cursor = null;
+  let generation;
+  let serverTime;
+
+  for (let page = 1; page <= 10000; page += 1) {
+    sendSyncProgress(event, 'download', page, 0);
+    const response = await postSyncJson(
+      syncApiUrl,
+      syncToken,
+      {
+        protocolVersion: 2,
+        mode: 'pull',
+        deviceId,
+        cursor,
+        limit: pageLimit,
+        maxBytes: 8 * 1024 * 1024,
+      },
+      {
+        gzip: useGzip,
+        maxRequestBytes,
+        maxDecompressedBytes,
+        timeoutMs: DEFAULT_SYNC_TIMEOUT_MS,
+      }
+    );
+    if (
+      Number(response?.protocolVersion) !== 2 ||
+      response?.mode !== 'pull' ||
+      !Array.isArray(response.records)
+    ) {
+      throw new Error('SYNC_INVALID_RESPONSE');
+    }
+    records.push(...response.records);
+    generation = typeof response.generation === 'string' ? response.generation : generation;
+    serverTime = response.serverTime || serverTime;
+    if (response.snapshotComplete === true) {
+      return { records, generation, serverTime };
+    }
+
+    const nextCursor = response.nextCursor;
+    if (typeof nextCursor !== 'string' || !nextCursor || seenCursors.has(nextCursor)) {
+      throw new Error('SYNC_INVALID_CURSOR');
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  throw new Error('SYNC_TOO_MANY_PAGES');
+}
+
+function createSyncRecordBatches(records, deviceId, targetBytes, singleRecordMaxBytes) {
+  if (!Array.isArray(records) || records.length === 0) {
+    return [];
+  }
+  const batches = [];
+  let current = [];
+  for (const record of records) {
+    const candidate = [...current, record];
+    const candidateBytes = Buffer.byteLength(
+      JSON.stringify({
+        protocolVersion: 2,
+        mode: 'push',
+        deviceId,
+        records: candidate,
+      })
+    );
+    if (candidateBytes <= targetBytes) {
+      current = candidate;
+      continue;
+    }
+    if (current.length > 0) {
+      batches.push(current);
+      current = [];
+    }
+    const singleBytes = Buffer.byteLength(
+      JSON.stringify({
+        protocolVersion: 2,
+        mode: 'push',
+        deviceId,
+        records: [record],
+      })
+    );
+    if (singleBytes > singleRecordMaxBytes) {
+      throw new Error('SYNC_REQUEST_TOO_LARGE');
+    }
+    if (singleBytes > targetBytes) {
+      batches.push([record]);
+    } else {
+      current = [record];
+    }
+  }
+  if (current.length > 0) {
+    batches.push(current);
+  }
+  return batches;
+}
+
+async function postSyncJson(url, token, payload, options = {}) {
+  const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+  const maxDecompressedBytes = options.maxDecompressedBytes || Infinity;
+  if (rawBody.length > maxDecompressedBytes) {
+    throw new Error('SYNC_REQUEST_TOO_LARGE');
+  }
+  const body = options.gzip ? zlib.gzipSync(rawBody) : rawBody;
+  if (body.length > (options.maxRequestBytes || Infinity)) {
+    throw new Error('SYNC_REQUEST_TOO_LARGE');
+  }
+
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Accept-Encoding': 'gzip',
+        ...(options.gzip ? { 'Content-Encoding': 'gzip' } : {}),
+      },
+      body,
+    },
+    options.timeoutMs || DEFAULT_SYNC_TIMEOUT_MS
+  );
+  const responseJson = await readJsonResponse(response);
+  if (!response.ok) {
+    const serverCode = responseJson?.error;
+    if (response.status === 401) {
+      throw new Error('SYNC_UNAUTHORIZED');
+    }
+    if (response.status === 413) {
+      throw new Error('SYNC_REQUEST_TOO_LARGE');
+    }
+    if (response.status === 409 && serverCode === 'SNAPSHOT_STALE') {
+      throw new Error('SYNC_SNAPSHOT_STALE');
+    }
+    throw new Error('SYNC_REQUEST_FAILED');
+  }
+  if (!responseJson || typeof responseJson !== 'object') {
+    throw new Error('SYNC_INVALID_RESPONSE');
+  }
+  return responseJson;
+}
+
+async function readJsonResponse(response) {
+  const responseText = await response.text();
+  if (!responseText) {
+    return null;
+  }
+  try {
+    return JSON.parse(responseText);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function sendSyncProgress(event, phase, completed, total) {
+  if (!event?.sender || event.sender.isDestroyed()) {
+    return;
+  }
+  event.sender.send('sync:progress', { phase, completed, total });
+}
+
+function toPositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 const MAX_WRITE_QUEUE_LENGTH = 50;
@@ -705,6 +1085,7 @@ function validateImageBufferSize(buffer) {
     throw new Error('IMAGE_TOO_LARGE');
   }
 }
+
 
 function getSafeImageId(value, fallbackPrefix) {
   const candidate = typeof value === 'string' ? value.trim() : '';
@@ -1759,6 +2140,64 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  let closeConfirmed = false;
+  let closeRequestPending = false;
+  let closeRequestId = 0;
+  let closeFallbackTimer = null;
+
+  mainWindow.on('close', (event) => {
+    if (closeConfirmed || mainWindow?.webContents.isDestroyed()) {
+      return;
+    }
+    event.preventDefault();
+    if (closeRequestPending) {
+      return;
+    }
+    closeRequestPending = true;
+    closeRequestId += 1;
+    const requestId = closeRequestId;
+    appendMainProcessLog('storage:before-close-request');
+    mainWindow.webContents.send('storage:before-close', { requestId });
+    closeFallbackTimer = setTimeout(() => {
+      if (requestId !== closeRequestId) {
+        return;
+      }
+      appendMainProcessLog('storage:before-close-timeout');
+      closeRequestPending = false;
+      closeFallbackTimer = null;
+      dialog.showErrorBox(
+        '错题数据仍在保存',
+        '保存超过 10 秒，应用已取消关闭。请稍后重试，数据不会被静默丢弃。'
+      );
+    }, 10000);
+  });
+
+  const closeReadyListener = (event, result) => {
+    if (
+      !mainWindow ||
+      event.sender !== mainWindow.webContents ||
+      !closeRequestPending ||
+      result?.requestId !== closeRequestId
+    ) {
+      return;
+    }
+    if (closeFallbackTimer) {
+      clearTimeout(closeFallbackTimer);
+      closeFallbackTimer = null;
+    }
+    appendMainProcessLog('storage:before-close-ready', result);
+    if (result?.ok === false) {
+      closeRequestPending = false;
+      dialog.showErrorBox(
+        '错题数据保存失败',
+        '应用已取消关闭，以免丢失刚才的修改。请检查磁盘空间后重试。'
+      );
+      return;
+    }
+    closeConfirmed = true;
+    mainWindow.close();
+  };
+  ipcMain.on('storage:close-ready', closeReadyListener);
 
   // Set security headers (CSP, X-Frame-Options, etc.)
   mainWindow.webContents.session.webRequest.onHeadersReceived(
@@ -1818,6 +2257,10 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    ipcMain.removeListener('storage:close-ready', closeReadyListener);
+    if (closeFallbackTimer) {
+      clearTimeout(closeFallbackTimer);
+    }
     appendMainProcessLog('createWindow:closed');
     mainWindow = null;
   });

@@ -11,6 +11,8 @@ interface BaseImageRef {
   kind: 'question' | 'note';
   createdAt: string;
   mimeType?: string;
+  contentHash?: string;
+  status?: 'available' | 'unavailable';
 }
 
 export type ImageRef =
@@ -30,6 +32,15 @@ export interface FollowUpMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+}
+
+export interface ReviewEvent {
+  id: string;
+  kind: 'review' | 'revert';
+  reviewedAt: string;
+  quality?: ReviewQuality;
+  targetEventId?: string;
+  deviceId?: string;
 }
 
 export interface QuestionAnalysis {
@@ -64,6 +75,8 @@ export interface Question {
   contentUpdatedAt: string;
   deleted: boolean;
   deletedAt?: string;
+  restoredAt?: string;
+  tombstoneCompacted?: boolean;
   syncStatus: QuestionSyncStatus;
   notes: string;
   notesUpdatedAt?: string;
@@ -74,7 +87,12 @@ export interface Question {
   lastReviewedAt?: string;
   nextReviewAt?: string;
   reviewStatus: QuestionReviewStatus;
+  reviewEvents: ReviewEvent[];
+  imageRefsUpdatedAt?: string;
+  imageRefsComplete: boolean;
   noteImagesUpdatedAt?: string;
+  noteImageRefsUpdatedAt?: string;
+  noteImageRefsComplete: boolean;
   reviewUpdatedAt?: string;
   analysis?: QuestionAnalysis;
   analysisContentUpdatedAt?: string;

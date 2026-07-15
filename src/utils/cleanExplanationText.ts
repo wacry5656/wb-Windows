@@ -19,13 +19,13 @@ export function cleanExplanationText(text: string): string {
     .replace(/[ \t]+\n/g, '\n');
 
   // Remove Qwen thinking mode output tags and their content
-  const thinkStartTagRegex = new RegExp('<' + 'think>' + '[\\s\\S]*?' + '</' + 'think>', 'g');
+  const thinkStartTagRegex = /<think>[\s\S]*?<\/think>/g;
   const thinkingBlockRegex = /<thinking>[\s\S]*?<\/thinking>/g;
   normalizedText = normalizedText.replace(thinkStartTagRegex, '');
   normalizedText = normalizedText.replace(thinkingBlockRegex, '');
 
   // Also handle stray end tags without matching start
-  const thinkEndTag = '</' + 'think>';
+  const thinkEndTag = '</think>';
   const thinkingEndTag = '</thinking>';
   let thinkEndIdx = normalizedText.indexOf(thinkEndTag);
   if (thinkEndIdx >= 0) {

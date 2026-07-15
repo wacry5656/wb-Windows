@@ -17,4 +17,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   persistImage: (payload) => ipcRenderer.invoke('storage:persist-image', payload),
   readImageDataUrl: (payload) => ipcRenderer.invoke('storage:read-image-data-url', payload),
   syncQuestions: (questions) => ipcRenderer.invoke('sync:questions', questions),
+  onSyncProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on('sync:progress', listener);
+    return () => ipcRenderer.removeListener('sync:progress', listener);
+  },
+  onBeforeClose: (callback) => {
+    const listener = (_event, request) => {
+      const requestId = request?.requestId;
+      Promise.resolve()
+        .then(() => callback())
+        .then(
+          () => ipcRenderer.send('storage:close-ready', { ok: true, requestId }),
+          (error) =>
+            ipcRenderer.send('storage:close-ready', {
+              ok: false,
+              requestId,
+              message: error instanceof Error ? error.message : String(error),
+            })
+        );
+    };
+    ipcRenderer.on('storage:before-close', listener);
+    return () => ipcRenderer.removeListener('storage:before-close', listener);
+  },
 });

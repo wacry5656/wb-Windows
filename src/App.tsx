@@ -6,6 +6,7 @@ import QuestionDetailPage from './pages/QuestionDetailPage';
 import HomePage from './pages/HomePage';
 import QuestionListPage from './pages/QuestionListPage';
 import ReviewPage from './pages/ReviewPage';
+import TrashPage from './pages/TrashPage';
 import {
   generateAnalysisUpdates,
   generateDetailedExplanationUpdates,
@@ -25,9 +26,14 @@ import {
   updateQuestionNotesById,
   updateQuestionTitleById,
   updateQuestionById,
+  restoreQuestionById,
 } from './services/questionService';
-import { getActiveQuestions, normalizeQuestions } from './services/questionModel';
-import { markQuestionReviewed, postponeReview } from './services/reviewService';
+import { getActiveQuestions, getDeletedQuestions } from './services/questionModel';
+import { markQuestionReviewed, postponeReview, revertLastReview } from './services/reviewService';
+import {
+  normalizeServerSnapshot,
+  reconcileServerSnapshot,
+} from './services/questionSyncService';
 import { Question } from './types/question';
 import { loadQuestions, saveQuestions } from './utils/questionStorage';
 import './App.css';
@@ -37,19 +43,44 @@ export default function App() {
   const [hasLoadedQuestions, setHasLoadedQuestions] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const [syncState, setSyncState] = useState<
+    'idle' | 'working' | 'success' | 'warning' | 'error'
+  >('idle');
+  const [lastSyncAt, setLastSyncAt] = useState<string>();
   const latestQuestionsRef = useRef<Question[]>([]);
+  const pendingSaveRef = useRef<Promise<void>>(Promise.resolve());
+  const lastQueuedQuestionsRef = useRef<Question[]>();
 
   const persistQuestionsImmediately = useCallback((questionsToSave: Question[]) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = undefined;
-    }
-
     latestQuestionsRef.current = questionsToSave;
-    void saveQuestions(questionsToSave).catch((error) => {
+    if (lastQueuedQuestionsRef.current === questionsToSave) {
+      return pendingSaveRef.current;
+    }
+    lastQueuedQuestionsRef.current = questionsToSave;
+    const saveRequest = pendingSaveRef.current
+      .catch(() => undefined)
+      .then(() => saveQuestions(questionsToSave));
+    pendingSaveRef.current = saveRequest;
+    void saveRequest.catch((error) => {
+      if (lastQueuedQuestionsRef.current === questionsToSave) {
+        lastQueuedQuestionsRef.current = undefined;
+      }
       console.error('Failed to immediately save questions:', error);
     });
+    return saveRequest;
+  }, []);
+
+  const replaceQuestions = useCallback((nextQuestions: Question[]) => {
+    latestQuestionsRef.current = nextQuestions;
+    setQuestions(nextQuestions);
+    return nextQuestions;
+  }, []);
+
+  const mutateQuestions = useCallback((updater: (current: Question[]) => Question[]) => {
+    const nextQuestions = updater(latestQuestionsRef.current);
+    latestQuestionsRef.current = nextQuestions;
+    setQuestions(nextQuestions);
+    return nextQuestions;
   }, []);
 
   const addQuestion = useCallback(
@@ -74,50 +105,74 @@ export default function App() {
     ) => {
       const imageRef = await persistQuestionImage(image, 'question');
       const newQuestion = createQuestion(title, imageRef, category, metadata);
-      setQuestions((currentQuestions) => [newQuestion, ...currentQuestions]);
+      mutateQuestions((currentQuestions) => [newQuestion, ...currentQuestions]);
       return newQuestion;
     },
-    []
+    [mutateQuestions]
   );
 
   const updateQuestionTitle = useCallback((id: string, title: string) => {
-    setQuestions((currentQuestions) => updateQuestionTitleById(currentQuestions, id, title));
-  }, []);
+    mutateQuestions((currentQuestions) =>
+      updateQuestionTitleById(currentQuestions, id, title)
+    );
+  }, [mutateQuestions]);
 
   const updateQuestionNotes = useCallback((id: string, notes: string) => {
-    setQuestions((currentQuestions) => updateQuestionNotesById(currentQuestions, id, notes));
-  }, []);
-
-  const updateQuestionContent = useCallback((id: string, updates: Partial<Pick<Question, 'title' | 'category' | 'grade' | 'questionType' | 'source' | 'questionText' | 'userAnswer' | 'correctAnswer' | 'errorCause' | 'tags'>>) => {
-    setQuestions((currentQuestions) =>
-      currentQuestions.map((question) =>
-        question.id === id
-          ? applyQuestionUpdates(question, {
-              ...updates,
-              title: updates.title?.trim() ?? question.title,
-              grade: updates.grade?.trim() ?? question.grade,
-              questionType: updates.questionType?.trim() ?? question.questionType,
-              source: updates.source?.trim() ?? question.source,
-              questionText: updates.questionText?.trim() ?? question.questionText,
-              userAnswer: updates.userAnswer?.trim() ?? question.userAnswer,
-              correctAnswer: updates.correctAnswer?.trim() ?? question.correctAnswer,
-              errorCause: updates.errorCause?.trim() ?? question.errorCause,
-              tags: updates.tags ?? question.tags,
-            })
-          : question
-      )
+    mutateQuestions((currentQuestions) =>
+      updateQuestionNotesById(currentQuestions, id, notes)
     );
-  }, []);
+  }, [mutateQuestions]);
+
+  const updateQuestionContent = useCallback(
+    (
+      id: string,
+      updates: Partial<
+        Pick<
+          Question,
+          | 'title'
+          | 'category'
+          | 'grade'
+          | 'questionType'
+          | 'source'
+          | 'questionText'
+          | 'userAnswer'
+          | 'correctAnswer'
+          | 'errorCause'
+          | 'tags'
+        >
+      >
+    ) => {
+      mutateQuestions((currentQuestions) =>
+        currentQuestions.map((question) =>
+          question.id === id
+            ? applyQuestionUpdates(question, {
+                ...updates,
+                title: updates.title?.trim() ?? question.title,
+                grade: updates.grade?.trim() ?? question.grade,
+                questionType: updates.questionType?.trim() ?? question.questionType,
+                source: updates.source?.trim() ?? question.source,
+                questionText: updates.questionText?.trim() ?? question.questionText,
+                userAnswer: updates.userAnswer?.trim() ?? question.userAnswer,
+                correctAnswer: updates.correctAnswer?.trim() ?? question.correctAnswer,
+                errorCause: updates.errorCause?.trim() ?? question.errorCause,
+                tags: updates.tags ?? question.tags,
+              })
+            : question
+        )
+      );
+    },
+    [mutateQuestions]
+  );
 
   const clearQuestionFollowUps = useCallback((id: string) => {
-    setQuestions((currentQuestions) =>
+    mutateQuestions((currentQuestions) =>
       replaceQuestionFollowUpChatsById(currentQuestions, id, [])
     );
-  }, []);
+  }, [mutateQuestions]);
 
   const addQuestionNoteImage = useCallback(async (id: string, dataUrl: string) => {
     const imageRef = await persistQuestionImage(dataUrl, 'note');
-    setQuestions((currentQuestions) => {
+    mutateQuestions((currentQuestions) => {
       const question = findQuestionById(currentQuestions, id);
       if (!question) {
         return currentQuestions;
@@ -128,78 +183,93 @@ export default function App() {
         imageRef,
       ]);
     });
-  }, []);
+  }, [mutateQuestions]);
 
   const deleteQuestionNoteImage = useCallback((id: string, noteImageId: string) => {
-    setQuestions((currentQuestions) =>
+    mutateQuestions((currentQuestions) =>
       removeQuestionNoteImageById(currentQuestions, id, noteImageId)
     );
-  }, []);
+  }, [mutateQuestions]);
 
   const deleteQuestion = useCallback((id: string) => {
-    setQuestions((currentQuestions) => {
+    mutateQuestions((currentQuestions) => {
       const nextQuestions = deleteQuestionById(currentQuestions, id);
       persistQuestionsImmediately(nextQuestions);
       return nextQuestions;
     });
-  }, [persistQuestionsImmediately]);
+  }, [mutateQuestions, persistQuestionsImmediately]);
+
+  const restoreQuestion = useCallback((id: string) => {
+    const nextQuestions = mutateQuestions((currentQuestions) =>
+      restoreQuestionById(currentQuestions, id)
+    );
+    void persistQuestionsImmediately(nextQuestions);
+  }, [mutateQuestions, persistQuestionsImmediately]);
 
   const reviewQuestion = useCallback((id: string, quality: 0 | 1 | 2 | 3 = 2) => {
-    setQuestions((currentQuestions) =>
+    mutateQuestions((currentQuestions) =>
       currentQuestions.map((question) =>
         question.id === id ? markQuestionReviewed(question, quality) : question
       )
     );
-  }, []);
+  }, [mutateQuestions]);
 
   const postponeQuestion = useCallback((id: string) => {
-    setQuestions((currentQuestions) =>
+    mutateQuestions((currentQuestions) =>
       currentQuestions.map((question) =>
         question.id === id ? postponeReview(question) : question
       )
     );
-  }, []);
+  }, [mutateQuestions]);
+
+  const undoLastReview = useCallback((id: string) => {
+    mutateQuestions((currentQuestions) =>
+      currentQuestions.map((question) =>
+        question.id === id ? revertLastReview(question) : question
+      )
+    );
+  }, [mutateQuestions]);
 
   const generateAiAnalysis = useCallback(async (question: Question) => {
     try {
       const updates = await generateAnalysisUpdates(question);
-      setQuestions((currentQuestions) =>
+      mutateQuestions((currentQuestions) =>
         updateQuestionById(currentQuestions, question.id, updates)
       );
     } catch (error) {
       console.error('Failed to generate AI analysis.', error);
       throw error;
     }
-  }, []);
+  }, [mutateQuestions]);
 
   const generateDetailedExplanation = useCallback(async (question: Question) => {
     try {
       const updates = await generateDetailedExplanationUpdates(question);
-      setQuestions((currentQuestions) =>
+      mutateQuestions((currentQuestions) =>
         updateQuestionById(currentQuestions, question.id, updates)
       );
     } catch (error) {
       console.error('Failed to generate detailed explanation.', error);
       throw error;
     }
-  }, []);
+  }, [mutateQuestions]);
 
   const generateHint = useCallback(async (question: Question) => {
     try {
       const updates = await generateHintUpdates(question);
-      setQuestions((currentQuestions) =>
+      mutateQuestions((currentQuestions) =>
         updateQuestionById(currentQuestions, question.id, updates)
       );
     } catch (error) {
       console.error('Failed to generate hint.', error);
       throw error;
     }
-  }, []);
+  }, [mutateQuestions]);
 
   const sendFollowUp = useCallback(async (question: Question, userMessage: string) => {
     try {
       const result = await generateFollowUpUpdates(question, userMessage);
-      setQuestions((currentQuestions) =>
+      mutateQuestions((currentQuestions) =>
         updateQuestionById(currentQuestions, question.id, result.updates)
       );
       return result.answer;
@@ -207,10 +277,16 @@ export default function App() {
       console.error('Failed to send follow-up.', error);
       throw error;
     }
-  }, []);
+  }, [mutateQuestions]);
 
   const syncQuestions = useCallback(async () => {
     if (isSyncing) {
+      return;
+    }
+
+    if (!hasLoadedQuestions) {
+      setSyncState('working');
+      setSyncStatusText('\u6b63\u5728\u8bfb\u53d6\u672c\u5730\u9898\u5e93\uff0c\u8bf7\u7a0d\u5019...');
       return;
     }
 
@@ -220,56 +296,58 @@ export default function App() {
     }
 
     setIsSyncing(true);
+    setSyncState('working');
     setSyncStatusText('\u6b63\u5728\u540c\u6b65...');
     try {
-      const localQuestions = latestQuestionsRef.current;
-      const uploadedCount = localQuestions.length;
-      const result = await window.electronAPI.syncQuestions(localQuestions);
-      if (!result || !Array.isArray(result.records)) {
-        throw new Error('SYNC_INVALID_RECORDS');
+      let pushedSnapshot = latestQuestionsRef.current;
+      let finalQuestions = pushedSnapshot;
+      let pendingLocalChangeCount = 0;
+
+      // One automatic follow-up pass uploads edits made during the first request.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = await window.electronAPI.syncQuestions(pushedSnapshot);
+        if (!result || !Array.isArray(result.records)) {
+          throw new Error('SYNC_INVALID_RECORDS');
+        }
+
+        const remoteQuestions = normalizeServerSnapshot(result.records);
+        const reconciled = reconcileServerSnapshot(
+          pushedSnapshot,
+          remoteQuestions,
+          latestQuestionsRef.current
+        );
+        finalQuestions = reconciled.questions;
+        pendingLocalChangeCount = reconciled.pendingLocalChangeCount;
+        latestQuestionsRef.current = finalQuestions;
+        replaceQuestions(finalQuestions);
+        await persistQuestionsImmediately(finalQuestions);
+
+        if (pendingLocalChangeCount === 0) {
+          break;
+        }
+        pushedSnapshot = finalQuestions;
+        setSyncStatusText('\u68c0\u6d4b\u5230\u540c\u6b65\u671f\u95f4\u7684\u65b0\u4fee\u6539\uff0c\u6b63\u5728\u8865\u5145\u540c\u6b65...');
       }
 
-      if (uploadedCount > 0 && result.records.length === 0) {
-        throw new Error('SYNC_EMPTY_REMOTE');
-      }
-
-      const remoteQuestions = normalizeQuestions(result.records).map((question) => ({
-        ...question,
-        syncStatus: 'synced' as const,
+      const completedAt = new Date();
+      setLastSyncAt(completedAt.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
       }));
-
-      if (remoteQuestions.length < result.records.length) {
-        console.warn('Sync normalization dropped remote records.', {
-          received: result.records.length,
-          normalized: remoteQuestions.length,
-        });
-      }
-
-      if (localQuestions.length > 0 && remoteQuestions.length === 0) {
-        throw new Error('SYNC_EMPTY_REMOTE');
-      }
-
-      if (localQuestions.length > 0 && remoteQuestions.length < localQuestions.length) {
-        console.warn('Sync returned fewer questions than local cache.', {
-          local: localQuestions.length,
-          remote: remoteQuestions.length,
-        });
-      }
-
-      setQuestions(remoteQuestions);
-      persistQuestionsImmediately(remoteQuestions);
-      setSyncStatusText(`\u540c\u6b65\u5b8c\u6210\uff1a${remoteQuestions.length} \u9898`);
+      setSyncState(pendingLocalChangeCount > 0 ? 'warning' : 'success');
+      setSyncStatusText(
+        pendingLocalChangeCount > 0
+          ? `${pendingLocalChangeCount} \u9879\u65b0\u4fee\u6539\u5df2\u4fdd\u7559\u5728\u672c\u5730\uff0c\u4ecd\u5f85\u4e0b\u6b21\u540c\u6b65`
+          : `\u540c\u6b65\u5b8c\u6210\uff1a${finalQuestions.length} \u9898`
+      );
     } catch (error) {
       console.error('Failed to sync questions.', error);
-      if (error instanceof Error && error.message === 'SYNC_EMPTY_REMOTE') {
-        setSyncStatusText('\u540c\u6b65\u5f02\u5e38\uff1a\u670d\u52a1\u7aef\u8fd4\u56de\u7a7a\u6570\u636e');
-        return;
-      }
-      setSyncStatusText('\u540c\u6b65\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 VPS \u914d\u7f6e');
+      setSyncState('error');
+      setSyncStatusText(getSyncErrorText(error));
     } finally {
       setIsSyncing(false);
     }
-  }, [isSyncing, persistQuestionsImmediately]);
+  }, [hasLoadedQuestions, isSyncing, persistQuestionsImmediately, replaceQuestions]);
 
   useEffect(() => {
     let isMounted = true;
@@ -279,61 +357,58 @@ export default function App() {
         return;
       }
 
-      setQuestions(savedQuestions);
+      replaceQuestions(savedQuestions);
       setHasLoadedQuestions(true);
     });
 
     return () => {
       isMounted = false;
     };
-  }, []);
-
-  useEffect(() => {
-    latestQuestionsRef.current = questions;
-  }, [questions]);
-
-  const debouncedSave = useCallback((questionsToSave: Question[]) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-
-    saveTimerRef.current = setTimeout(() => {
-      latestQuestionsRef.current = questionsToSave;
-      saveQuestions(questionsToSave).catch((error) => {
-        console.error('Failed to auto-save questions:', error);
-      });
-    }, 800);
-  }, []);
+  }, [replaceQuestions]);
 
   useEffect(() => {
     if (!hasLoadedQuestions) {
       return;
     }
 
-    debouncedSave(questions);
-
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, [debouncedSave, hasLoadedQuestions, questions]);
+    void persistQuestionsImmediately(questions);
+  }, [hasLoadedQuestions, persistQuestionsImmediately, questions]);
 
   useEffect(() => {
-    return () => {
-      if (!hasLoadedQuestions || !saveTimerRef.current) {
+    if (!window.electronAPI?.onBeforeClose) {
+      return;
+    }
+    return window.electronAPI.onBeforeClose(async () => {
+      if (!hasLoadedQuestions) {
         return;
       }
+      await persistQuestionsImmediately(latestQuestionsRef.current);
+      await pendingSaveRef.current;
+    });
+  }, [hasLoadedQuestions, persistQuestionsImmediately]);
 
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = undefined;
-      void saveQuestions(latestQuestionsRef.current).catch((error) => {
-        console.error('Failed to flush pending questions on shutdown:', error);
-      });
-    };
-  }, [hasLoadedQuestions]);
+  useEffect(() => {
+    if (!window.electronAPI?.onSyncProgress) {
+      return;
+    }
+    return window.electronAPI.onSyncProgress((progress) => {
+      setSyncState('working');
+      if (progress.phase === 'upload') {
+        setSyncStatusText(
+          `\u6b63\u5728\u4e0a\u4f20 ${progress.completed}/${progress.total} \u6279`
+        );
+      } else if (progress.phase === 'download') {
+        setSyncStatusText(
+          `\u6b63\u5728\u4e0b\u8f7d ${progress.completed} \u9875`
+        );
+      } else {
+        setSyncStatusText('\u6b63\u5728\u51c6\u5907\u540c\u6b65...');
+      }
+    });
+  }, []);
 
   const activeQuestions = useMemo(() => getActiveQuestions(questions), [questions]);
+  const deletedQuestions = useMemo(() => getDeletedQuestions(questions), [questions]);
   const stats = useMemo(() => getVisibleStats(activeQuestions), [activeQuestions]);
 
   return (
@@ -380,17 +455,36 @@ export default function App() {
               >
                 复习
               </NavLink>
+              <NavLink
+                to="/trash"
+                className={({ isActive }) =>
+                  `nav__link ${isActive ? 'nav__link--active' : ''}`
+                }
+              >
+                {'\u56de\u6536\u7ad9'}
+                {deletedQuestions.length > 0 && (
+                  <span className="nav__count">{deletedQuestions.length}</span>
+                )}
+              </NavLink>
             </nav>
-            <div className="sync-area">
+            <div className={`sync-area sync-area--${syncState}`}>
               <button
                 className="sync-button"
                 onClick={syncQuestions}
                 disabled={isSyncing}
                 aria-busy={isSyncing}
               >
-                {isSyncing ? '\u6b63\u5728\u540c\u6b65...' : '\u540c\u6b65'}
+                <span className="sync-button__dot" aria-hidden="true" />
+                {isSyncing ? '\u6b63\u5728\u540c\u6b65' : '\u7acb\u5373\u540c\u6b65'}
               </button>
-              {syncStatusText && <span className="sync-status">{syncStatusText}</span>}
+              {(syncStatusText || lastSyncAt) && (
+                <div className="sync-status" role="status" aria-live="polite">
+                  <span>{syncStatusText}</span>
+                  {lastSyncAt && syncState === 'success' && (
+                    <small>{lastSyncAt}</small>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -481,6 +575,16 @@ export default function App() {
                   questions={activeQuestions}
                   onMarkQuestionReviewed={reviewQuestion}
                   onPostponeQuestion={postponeQuestion}
+                  onRevertLastReview={undoLastReview}
+                />
+              }
+            />
+            <Route
+              path="/trash"
+              element={
+                <TrashPage
+                  questions={deletedQuestions}
+                  onRestoreQuestion={restoreQuestion}
                 />
               }
             />
@@ -489,4 +593,34 @@ export default function App() {
       </div>
     </HashRouter>
   );
+}
+
+function getSyncErrorText(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const knownCodes = [
+    'SYNC_SERVER_UPGRADE_REQUIRED',
+    'SYNC_REQUEST_TOO_LARGE',
+    'TIMEOUT',
+    'SYNC_INVALID_REMOTE_RECORDS',
+    'SYNC_DUPLICATE_REMOTE_ID',
+    'SYNC_RECORDS_REJECTED',
+    'SYNC_UNAUTHORIZED',
+  ];
+  const code = knownCodes.find((candidate) => message.includes(candidate)) || '';
+  switch (code) {
+    case 'SYNC_SERVER_UPGRADE_REQUIRED':
+      return '\u9519\u9898\u5e93\u8f83\u5927\uff0cVPS \u540c\u6b65\u670d\u52a1\u9700\u5347\u7ea7\u540e\u518d\u540c\u6b65';
+    case 'SYNC_REQUEST_TOO_LARGE':
+      return '\u5355\u6761\u9898\u76ee\u56fe\u7247\u8fc7\u5927\uff0c\u8bf7\u5220\u51cf\u6216\u538b\u7f29\u540e\u91cd\u8bd5';
+    case 'TIMEOUT':
+      return '\u540c\u6b65\u8d85\u65f6\uff0c\u672c\u5730\u4fee\u6539\u5df2\u4fdd\u7559\uff0c\u8bf7\u91cd\u8bd5';
+    case 'SYNC_INVALID_REMOTE_RECORDS':
+    case 'SYNC_DUPLICATE_REMOTE_ID':
+    case 'SYNC_RECORDS_REJECTED':
+      return '\u670d\u52a1\u7aef\u6570\u636e\u5f02\u5e38\uff0c\u5df2\u963b\u6b62\u8986\u76d6\u672c\u5730\u9898\u5e93';
+    case 'SYNC_UNAUTHORIZED':
+      return 'VPS \u540c\u6b65\u5bc6\u94a5\u65e0\u6548';
+    default:
+      return '\u540c\u6b65\u5931\u8d25\uff0c\u672c\u5730\u4fee\u6539\u5df2\u5b89\u5168\u4fdd\u7559';
+  }
 }

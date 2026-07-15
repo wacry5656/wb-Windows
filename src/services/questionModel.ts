@@ -4,9 +4,11 @@ import {
   ImageRef,
   Question,
   QuestionAnalysis,
+  ReviewEvent,
   QuestionReviewStatus,
   QuestionSyncStatus,
 } from '../types/question';
+import { createLegacyFollowUpId } from './followUpChatIds';
 
 const DEFAULT_SYNC_STATUS: QuestionSyncStatus = 'pending';
 const DEFAULT_REVIEW_STATUS: QuestionReviewStatus = 'new';
@@ -41,7 +43,8 @@ export function createInlineImageRef(
   kind: ImageRef['kind'],
   createdAt: string,
   id?: string,
-  mimeType?: string
+  mimeType?: string,
+  contentHash?: string
 ): ImageRef {
   return {
     id: id || createRandomId(`img-${kind}`),
@@ -50,6 +53,8 @@ export function createInlineImageRef(
     dataUrl,
     createdAt,
     mimeType: mimeType || inferMimeTypeFromDataUrl(dataUrl),
+    contentHash,
+    status: 'available',
   };
 }
 
@@ -58,7 +63,8 @@ export function createFileImageRef(
   kind: ImageRef['kind'],
   createdAt: string,
   id?: string,
-  mimeType?: string
+  mimeType?: string,
+  contentHash?: string
 ): ImageRef {
   return {
     id: id || createRandomId(`img-${kind}`),
@@ -67,6 +73,8 @@ export function createFileImageRef(
     uri,
     createdAt,
     mimeType,
+    contentHash,
+    status: 'available',
   };
 }
 
@@ -104,6 +112,10 @@ export function isActiveQuestion(question: Question): boolean {
 
 export function getActiveQuestions(questions: Question[]): Question[] {
   return questions.filter(isActiveQuestion);
+}
+
+export function getDeletedQuestions(questions: Question[]): Question[] {
+  return questions.filter((question) => question.deleted === true);
 }
 
 export function resolveNextSyncStatus(_currentStatus?: QuestionSyncStatus): QuestionSyncStatus {
@@ -152,6 +164,15 @@ function normalizeQuestion(value: unknown): Question | null {
     typeof question.reviewCount === 'number' && Number.isFinite(question.reviewCount)
       ? Math.max(0, Math.floor(question.reviewCount))
       : 0;
+  const reviewEvents = normalizeReviewEvents(
+    question.reviewEvents,
+    question.id,
+    reviewCount,
+    normalizeDateString(question.lastReviewedAt) ||
+      normalizeDateString(question.reviewUpdatedAt) ||
+      updatedAt
+  );
+  const derivedReviewCount = getEffectiveReviewCount(reviewEvents);
 
   const imageRefs = normalizeImageRefs(
     question.imageRefs,
@@ -169,18 +190,21 @@ function normalizeQuestion(value: unknown): Question | null {
   const questionText =
     typeof question.questionText === 'string' ? question.questionText : '';
 
-  if (!image && !questionText.trim() && !deleted) {
-    return null;
-  }
-
   const normalizedLastReviewedAt = normalizeDateString(question.lastReviewedAt);
-  const normalizedReviewStatus = normalizeReviewStatus(question.reviewStatus, reviewCount);
+  const normalizedReviewStatus = normalizeReviewStatus(
+    question.reviewStatus,
+    derivedReviewCount
+  );
   const normalizedAnalysis = normalizeQuestionAnalysis(question.analysis);
   const normalizedDetailedExplanationUpdatedAt = normalizeDateString(
     question.detailedExplanationUpdatedAt
   );
   const normalizedHintUpdatedAt = normalizeDateString(question.hintUpdatedAt);
-  const normalizedFollowUpChats = normalizeFollowUpChats(question.followUpChats);
+  const normalizedFollowUpChats = normalizeFollowUpChats(
+    question.followUpChats,
+    question.id,
+    createdAt
+  );
   const normalizedNotesUpdatedAt =
     normalizeDateString(question.notesUpdatedAt) ||
     (typeof question.notes === 'string' && question.notes.trim() ? updatedAt : undefined);
@@ -189,7 +213,9 @@ function normalizeQuestion(value: unknown): Question | null {
     (noteImageRefs.length > 0 ? updatedAt : undefined);
   const normalizedReviewUpdatedAt =
     normalizeDateString(question.reviewUpdatedAt) ||
-    (reviewCount > 0 || normalizedLastReviewedAt ? normalizedLastReviewedAt || updatedAt : undefined);
+    (derivedReviewCount > 0 || normalizedLastReviewedAt
+      ? normalizedLastReviewedAt || updatedAt
+      : undefined);
   const normalizedAnalysisContentUpdatedAt =
     normalizeDateString(question.analysisContentUpdatedAt) ||
     normalizedAnalysis?.updatedAt ||
@@ -212,8 +238,8 @@ function normalizeQuestion(value: unknown): Question | null {
       : undefined);
   const nextReviewAt =
     normalizeDateString(question.nextReviewAt) ||
-    (reviewCount > 0
-      ? calculateNextReviewAt(normalizedLastReviewedAt || updatedAt, reviewCount)
+    (derivedReviewCount > 0
+      ? calculateNextReviewAt(normalizedLastReviewedAt || updatedAt, derivedReviewCount)
       : undefined);
 
   return {
@@ -234,7 +260,10 @@ function normalizeQuestion(value: unknown): Question | null {
     updatedAt,
     contentUpdatedAt,
     deleted,
-    deletedAt: deleted ? normalizeDateString(question.deletedAt) || updatedAt : undefined,
+    deletedAt:
+      normalizeDateString(question.deletedAt) || (deleted ? updatedAt : undefined),
+    restoredAt: normalizeDateString(question.restoredAt),
+    tombstoneCompacted: question.tombstoneCompacted === true ? true : undefined,
     syncStatus: normalizeSyncStatus(question.syncStatus),
     notes: typeof question.notes === 'string' ? question.notes : '',
     notesUpdatedAt: normalizedNotesUpdatedAt,
@@ -244,11 +273,20 @@ function normalizeQuestion(value: unknown): Question | null {
       typeof question.masteryLevel === 'number' && Number.isFinite(question.masteryLevel)
         ? Math.max(0, Math.min(5, Math.floor(question.masteryLevel)))
         : 0,
-    reviewCount,
+    reviewCount: derivedReviewCount,
     lastReviewedAt: normalizedLastReviewedAt || undefined,
     nextReviewAt,
     reviewStatus: normalizedReviewStatus,
+    reviewEvents,
+    imageRefsUpdatedAt:
+      normalizeDateString(question.imageRefsUpdatedAt) ||
+      (imageRefs.length > 0 ? contentUpdatedAt : undefined),
+    imageRefsComplete: question.imageRefsComplete !== false,
     noteImagesUpdatedAt: normalizedNoteImagesUpdatedAt,
+    noteImageRefsUpdatedAt:
+      normalizeDateString(question.noteImageRefsUpdatedAt) ||
+      normalizedNoteImagesUpdatedAt,
+    noteImageRefsComplete: question.noteImageRefsComplete !== false,
     reviewUpdatedAt: normalizedReviewUpdatedAt,
     analysis: normalizedAnalysis,
     analysisContentUpdatedAt: normalizedAnalysisContentUpdatedAt,
@@ -354,31 +392,170 @@ function normalizeStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function normalizeFollowUpChats(value: unknown): FollowUpMessage[] | undefined {
+function normalizeFollowUpChats(
+  value: unknown,
+  questionId: string,
+  fallbackCreatedAt: string
+): FollowUpMessage[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
   const chats = value
-    .filter(
-      (item): item is Partial<FollowUpMessage> =>
-        Boolean(item) &&
-        typeof item === 'object' &&
-        (item.role === 'user' || item.role === 'assistant') &&
-        typeof item.content === 'string' &&
-        typeof item.createdAt === 'string'
-    )
-    .map((item) =>
-      createFollowUpMessage(
-        item.role!,
-        item.content!,
-        normalizeDateString(item.createdAt) || new Date().toISOString(),
-        typeof item.id === 'string' && item.id.trim() ? item.id : undefined
-      )
-    )
-    .filter((item) => item.content);
+    .map((valueItem, sourceIndex): FollowUpMessage | null => {
+      if (!valueItem || typeof valueItem !== 'object') {
+        return null;
+      }
+      const item = valueItem as Partial<FollowUpMessage> & { createdAt?: unknown };
+      if (
+        (item.role !== 'user' && item.role !== 'assistant') ||
+        typeof item.content !== 'string' ||
+        !item.content.trim()
+      ) {
+        return null;
+      }
+
+      const role = item.role;
+      const rawContent = item.content;
+      const createdAt = normalizeFollowUpCreatedAt(
+        item.createdAt,
+        fallbackCreatedAt
+      );
+      const existingId =
+        typeof item.id === 'string' && item.id.trim() ? item.id : undefined;
+
+      return createFollowUpMessage(
+        role,
+        rawContent,
+        createdAt,
+        existingId ||
+          createLegacyFollowUpId({
+            questionId,
+            role,
+            content: rawContent,
+            createdAtMillis: new Date(createdAt).getTime(),
+            sourceIndex,
+          })
+      );
+    })
+    .filter((item): item is FollowUpMessage => Boolean(item));
 
   return chats.length > 0 ? chats : undefined;
+}
+
+function normalizeFollowUpCreatedAt(value: unknown, fallbackCreatedAt: string): string {
+  const timestamp =
+    typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : typeof value === 'string'
+        ? new Date(value).getTime()
+        : Number.NaN;
+  return Number.isFinite(timestamp) && timestamp > 0
+    ? new Date(timestamp).toISOString()
+    : fallbackCreatedAt;
+}
+
+function normalizeReviewEvents(
+  value: unknown,
+  questionId: string,
+  legacyReviewCount: number,
+  legacyReviewedAt: string
+): ReviewEvent[] {
+  const events = Array.isArray(value)
+    ? value
+        .map(normalizeReviewEvent)
+        .filter((event): event is ReviewEvent => Boolean(event))
+    : [];
+
+  if (events.length > 0 || legacyReviewCount <= 0) {
+    return deduplicateReviewEvents(events);
+  }
+
+  return Array.from({ length: legacyReviewCount }, (_, index) => ({
+    id: `legacy-review:${questionId}:${index + 1}`,
+    kind: 'review' as const,
+    reviewedAt: legacyReviewedAt,
+    quality: 2 as const,
+  }));
+}
+
+function normalizeReviewEvent(value: unknown): ReviewEvent | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const event = value as Partial<ReviewEvent>;
+  const id = typeof event.id === 'string' ? event.id.trim() : '';
+  const reviewedAt = normalizeDateString(event.reviewedAt);
+  if (!id || !reviewedAt || (event.kind !== 'review' && event.kind !== 'revert')) {
+    return null;
+  }
+
+  if (event.kind === 'revert') {
+    const targetEventId =
+      typeof event.targetEventId === 'string' ? event.targetEventId.trim() : '';
+    if (!targetEventId) {
+      return null;
+    }
+    return {
+      id,
+      kind: 'revert',
+      reviewedAt,
+      targetEventId,
+      deviceId:
+        typeof event.deviceId === 'string' && event.deviceId.trim()
+          ? event.deviceId.trim()
+          : undefined,
+    };
+  }
+
+  const quality = event.quality;
+  if (quality !== 0 && quality !== 1 && quality !== 2 && quality !== 3) {
+    return null;
+  }
+
+  return {
+    id,
+    kind: 'review',
+    reviewedAt,
+    quality,
+    deviceId:
+      typeof event.deviceId === 'string' && event.deviceId.trim()
+        ? event.deviceId.trim()
+        : undefined,
+  };
+}
+
+function deduplicateReviewEvents(events: ReviewEvent[]): ReviewEvent[] {
+  const byId = new Map<string, ReviewEvent>();
+  events.forEach((event) => {
+    const previous = byId.get(event.id);
+    if (!previous || event.reviewedAt >= previous.reviewedAt) {
+      byId.set(event.id, event);
+    }
+  });
+  return [...byId.values()].sort((left, right) =>
+    left.reviewedAt === right.reviewedAt
+      ? left.id.localeCompare(right.id)
+      : left.reviewedAt.localeCompare(right.reviewedAt)
+  );
+}
+
+export function getEffectiveReviewEvents(events: ReviewEvent[]): ReviewEvent[] {
+  const revertedIds = new Set(
+    events
+      .filter((event) => event.kind === 'revert' && event.targetEventId)
+      .map((event) => event.targetEventId!)
+  );
+  return events.filter(
+    (event) => event.kind === 'review' && !revertedIds.has(event.id)
+  );
+}
+
+export function getEffectiveReviewCount(events: ReviewEvent[]): number {
+  return getEffectiveReviewEvents(events).filter(
+    (event) => event.quality === 1 || event.quality === 2 || event.quality === 3
+  ).length;
 }
 
 function getLatestFollowUpCreatedAt(
@@ -443,7 +620,14 @@ function normalizeImageRef(
     (ref.storage === 'file' || (typeof ref.storage !== 'string' && typeof ref.uri === 'string')) &&
     isFileImageSource(ref.uri)
   ) {
-    return createFileImageRef(ref.uri!, kind, normalizedCreatedAt, refId, ref.mimeType);
+    return createFileImageRef(
+      ref.uri!,
+      kind,
+      normalizedCreatedAt,
+      refId,
+      ref.mimeType,
+      ref.contentHash
+    );
   }
 
   if (typeof ref.dataUrl === 'string' && ref.dataUrl.startsWith('data:image/')) {
@@ -452,7 +636,8 @@ function normalizeImageRef(
       kind,
       normalizedCreatedAt,
       refId,
-      ref.mimeType
+      ref.mimeType,
+      ref.contentHash
     );
   }
 
@@ -520,19 +705,19 @@ function normalizeSyncStatus(value: unknown): QuestionSyncStatus {
 }
 
 function getReviewIntervalDays(reviewCount: number): number {
-  if (reviewCount <= 0) {
+  if (reviewCount <= 1) {
     return 1;
   }
 
-  if (reviewCount === 1) {
+  if (reviewCount === 2) {
     return 3;
   }
 
-  if (reviewCount === 2) {
+  if (reviewCount === 3) {
     return 7;
   }
 
-  if (reviewCount === 3) {
+  if (reviewCount === 4) {
     return 14;
   }
 

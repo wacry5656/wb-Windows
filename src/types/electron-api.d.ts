@@ -85,8 +85,16 @@ export interface ElectronApi {
   ) => Promise<{
     ok: boolean;
     serverTime?: string;
+    protocolVersion?: number;
+    generation?: string;
     records: unknown[];
   }>;
+  onSyncProgress?: (callback: (progress: {
+    phase: 'prepare' | 'upload' | 'download';
+    completed: number;
+    total: number;
+  }) => void) => () => void;
+  onBeforeClose?: (callback: () => void | Promise<void>) => () => void;
 }
 
 declare global {

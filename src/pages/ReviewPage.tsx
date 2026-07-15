@@ -7,6 +7,7 @@ interface ReviewPageProps {
   questions: Question[];
   onMarkQuestionReviewed: (id: string, quality?: ReviewQuality) => void;
   onPostponeQuestion: (id: string) => void;
+  onRevertLastReview: (id: string) => void;
 }
 
 type SortType =
@@ -21,11 +22,13 @@ export default function ReviewPage({
   questions,
   onMarkQuestionReviewed,
   onPostponeQuestion,
+  onRevertLastReview,
 }: ReviewPageProps) {
   const [sortBy, setSortBy] = useState<SortType>('leastReviewed');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showAllQuestions, setShowAllQuestions] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [lastCompletedQuestionId, setLastCompletedQuestionId] = useState<string>();
 
   // 计算待复习题目
   const reviewQuestions = useMemo(() => {
@@ -105,6 +108,15 @@ export default function ReviewPage({
     setShowAnswer(false);
   }, [safeIndex]);
 
+  const handleRevertLastCompleted = () => {
+    if (!lastCompletedQuestionId) {
+      return;
+    }
+
+    onRevertLastReview(lastCompletedQuestionId);
+    setLastCompletedQuestionId(undefined);
+  };
+
   // 空状态
   if (!Array.isArray(questions) || questions.length === 0) {
     return (
@@ -137,6 +149,15 @@ export default function ReviewPage({
           >
             查看全部题目
           </button>
+          {lastCompletedQuestionId && (
+            <button
+              type="button"
+              className="btn-revert-review"
+              onClick={handleRevertLastCompleted}
+            >
+              {'\u64a4\u9500\u4e0a\u4e00\u9898\u7684\u6210\u529f\u590d\u4e60'}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -155,6 +176,9 @@ export default function ReviewPage({
   }
 
   const handleMarkReviewed = (quality: ReviewQuality) => {
+    if (quality > 0) {
+      setLastCompletedQuestionId(currentQuestion.id);
+    }
     onMarkQuestionReviewed(currentQuestion.id, quality);
     if (safeIndex < sortedQuestions.length - 1) {
       setCurrentIndex(safeIndex + 1);
@@ -500,6 +524,15 @@ export default function ReviewPage({
               <button type="button" className="btn-postpone" onClick={handlePostpone}>
                 ⏰ 暂时跳过，24小时后再复习
               </button>
+              {lastCompletedQuestionId && (
+                <button
+                  type="button"
+                  className="btn-revert-review"
+                  onClick={handleRevertLastCompleted}
+                >
+                  {'\u64a4\u9500\u4e0a\u4e00\u9898\u7684\u6210\u529f\u590d\u4e60'}
+                </button>
+              )}
             </div>
           </div>
         </main>
