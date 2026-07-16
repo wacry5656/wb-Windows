@@ -5,7 +5,7 @@ const dotenv = require('dotenv');
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const apiKey = process.env.DASHSCOPE_API_KEY;
-const model = process.env.QWEN_MODEL || 'qwen3.6-plus';
+const model = process.env.QWEN_MODEL || 'qwen3.7-plus';
 const baseUrl =
   process.env.DASHSCOPE_BASE_URL ||
   'https://dashscope.aliyuncs.com/compatible-mode/v1';

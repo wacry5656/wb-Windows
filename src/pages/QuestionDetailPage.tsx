@@ -180,6 +180,10 @@ export default function QuestionDetailPage({
 
   const handleAiError = (error: unknown, fallbackMessage: string): string => {
     if (error instanceof Error) {
+      if (error.message.includes('AI_FREE_QUOTA_EXHAUSTED')) {
+        return '当前 AI 模型的免费额度已用完，请更换模型或检查计费设置';
+      }
+
       if (error.message === 'MISSING_API_KEY') {
         return '未检测到 API Key，请检查 .env 配置';
       }

@@ -17,7 +17,7 @@ const isDev =
   process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 const DEFAULT_QWEN_BASE_URL =
   'https://dashscope.aliyuncs.com/compatible-mode/v1';
-const DEFAULT_QWEN_MODEL = 'qwen3.6-plus';
+const DEFAULT_QWEN_MODEL = 'qwen3.7-plus';
 const DEFAULT_AI_TIMEOUT_MS = 60000;
 const DETAILED_EXPLANATION_TIMEOUT_MS = 180000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -1532,6 +1532,27 @@ function normalizeHintText(text) {
     .trim();
 }
 
+function createQwenRequestError(message, status, details) {
+  let detailsText = '';
+
+  try {
+    detailsText =
+      typeof details === 'string' ? details : JSON.stringify(details ?? '');
+  } catch (_error) {
+    detailsText = '';
+  }
+
+  const isFreeQuotaExhausted =
+    status === 403 &&
+    /FreeTierOnly|free quota has been exhausted/i.test(detailsText);
+  const error = new Error(
+    isFreeQuotaExhausted ? 'AI_FREE_QUOTA_EXHAUSTED' : message
+  );
+  error.details = details;
+  error.status = status;
+  return error;
+}
+
 function normalizeAnalysisPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('INVALID_JSON');
@@ -1655,9 +1676,11 @@ async function generateQuestionAnalysis(_event, payload) {
   }
 
   if (!response.ok) {
-    const error = new Error('QWEN_API_REQUEST_FAILED');
-    error.details = responseJson ?? responseText;
-    error.status = response.status;
+    const error = createQwenRequestError(
+      'QWEN_API_REQUEST_FAILED',
+      response.status,
+      responseJson ?? responseText
+    );
     appendMainProcessLog('analysis:generate:error', {
       status: response.status,
       details: responseJson ?? responseText,
@@ -1775,9 +1798,11 @@ async function generateQuestionExplanation(_event, payload) {
   }
 
   if (!response.ok) {
-    const error = new Error('QWEN_EXPLANATION_REQUEST_FAILED');
-    error.details = responseJson ?? responseText;
-    error.status = response.status;
+    const error = createQwenRequestError(
+      'QWEN_EXPLANATION_REQUEST_FAILED',
+      response.status,
+      responseJson ?? responseText
+    );
     appendMainProcessLog('explanation:generate:error', {
       status: response.status,
       details: responseJson ?? responseText,
@@ -1882,9 +1907,11 @@ async function generateQuestionHint(_event, payload) {
   }
 
   if (!response.ok) {
-    const error = new Error('QWEN_HINT_REQUEST_FAILED');
-    error.details = responseJson ?? responseText;
-    error.status = response.status;
+    const error = createQwenRequestError(
+      'QWEN_HINT_REQUEST_FAILED',
+      response.status,
+      responseJson ?? responseText
+    );
     appendMainProcessLog('hint:generate:error', {
       status: response.status,
       details: responseJson ?? responseText,
@@ -2101,10 +2128,11 @@ async function generateFollowUp(_event, payload) {
   }
 
   if (!response.ok) {
-    const error = new Error('QWEN_FOLLOWUP_REQUEST_FAILED');
-    error.details = responseJson ?? responseText;
-    error.status = response.status;
-    throw error;
+    throw createQwenRequestError(
+      'QWEN_FOLLOWUP_REQUEST_FAILED',
+      response.status,
+      responseJson ?? responseText
+    );
   }
 
   const answer = extractTextContent(

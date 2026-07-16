@@ -182,6 +182,28 @@ test('shows hint failure message for generic hint errors', async () => {
   expect(consoleSpy).toHaveBeenCalled();
 });
 
+test('shows actionable message when the AI free quota is exhausted', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  window.electronAPI = {
+    loadQuestions: jest.fn().mockResolvedValue([baseQuestion]),
+    saveQuestions: jest.fn().mockResolvedValue({ success: true }),
+    getApiConfigStatus: jest.fn(),
+    generateQuestionAnalysis: jest.fn(),
+    generateQuestionExplanation: jest.fn(),
+    generateQuestionHint: jest
+      .fn()
+      .mockRejectedValue(new Error('AI_FREE_QUOTA_EXHAUSTED')),
+    generateFollowUp: jest.fn(),
+  };
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole('button', { name: '思路指引' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '当前 AI 模型的免费额度已用完，请更换模型或检查计费设置'
+  );
+});
+
 test('regenerating hint does not clear follow-up chats', async () => {
   const deferred = createDeferred<{ hint: string }>();
 
